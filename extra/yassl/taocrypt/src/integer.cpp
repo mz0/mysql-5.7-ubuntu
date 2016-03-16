@@ -178,7 +178,7 @@ DWord() {}
                 "a" (a), "rm" (b) : "cc");
 
         #elif defined(__mips64)
-            __asm__("dmultu %2,%3" : "=h" (r.halfs_.high), "=l" (r.halfs_.low)
+            __asm__("dmultu %2,%3" : "=d" (r.halfs_.high), "=lc" (r.halfs_.low)
                 : "r" (a), "r" (b));
 
         #elif defined(_M_IX86)

@@ -288,6 +288,7 @@ sub collect_one_suite($)
     {
       $suitedir= my_find_dir($::basedir,
 			     ["share/mysql-test/suite",
+			      "lib/mysql-test/suite",
 			      "mysql-test/suite",
 			      "internal/mysql-test/suite",
 			      "mysql-test",

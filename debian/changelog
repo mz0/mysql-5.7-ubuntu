@@ -1,3 +1,22 @@
+mysql-5.7 (5.7.11-0ubuntu6) xenial; urgency=medium
+
+  [ Lars Tangvald ]
+  * Added patch for exporting my_make_scrambled_password to fix
+    pure-ftpd FTBFS.
+  * Client commands in d/postinst will ignore custom config (LP:
+    #1567695)
+  * Enable changing root password on install if previous db had empty
+    (LP: #1567098)
+
+  [ Robie Basak ]
+  * d/mysql-server-5.7.postinst: quote "$rootpw" correctly.
+  * d/control: add libnuma-dev and libaio-dev to libmysqld-dev
+    dependencies, since these are required according to "mysql_config
+    --libmysqld-libs". This fixes FTBFS of packages that use
+    libmysqld-dev.
+
+ -- Robie Basak <robie.basak@ubuntu.com>  Wed, 13 Apr 2016 17:34:08 +0100
+
 mysql-5.7 (5.7.11-0ubuntu5) xenial; urgency=medium
 
   * d/mysql-server-5.7.postinst: ignore mysql_upgrade's exit status when

@@ -636,12 +636,8 @@ EOF
 --echo # Bug #16102788: INDETERMINATE BEHAVIOR DUE TO EMPTY OPTION VALUES
 --echo #
 
---replace_regex /mysql: .ERROR. [^ ]*: Empty value for 'port' specified/mysql: [ERROR] mysql: Empty value for 'port' specified/
---error 5
 --exec $MYSQL --port= -e "SELECT 1" 2>&1
 
---replace_regex /mysql: .ERROR. [^ ]*: Empty value for 'port' specified/mysql: [ERROR] mysql: Empty value for 'port' specified/
---error 5
 --exec $MYSQL -P "" -e "SELECT 1" 2>&1
 
 --echo #

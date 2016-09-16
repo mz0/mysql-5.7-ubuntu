@@ -1,3 +1,27 @@
+mysql-5.7 (5.7.15-0ubuntu2) yakkety; urgency=medium
+
+  * Add working dir to perl lib path for dep8 upstream.
+    New versions of perl will no longer automatically include working dir in
+    the path. This was causing the mtr suite to fail to start.
+  * Change mysql-testsuite dependency from python to libjson-perl.
+    Tests written in python were rewritten in perl, so testsuite no longer
+    depends on python, but tests fail if libjson-perl is missing.
+  * Build with DWITH_LZ4=system
+    If the flag is not set the package will be built with a bundled liblz4
+    instead of the one provided by the liblz4-dev build-dep.
+  * Add support for custom datadir to systemd service (LP: #1574782)
+    The service was reporting errors if no database was found in /var/lib/mysql
+    It will now check the path specified in the config
+  * Fix support for soft-link datadir (LP: #1474212)
+    Upgrading more than once when datadir is soft-link was causing errors
+  * Escape special characters in password (LP: #1598992)
+    The password string was not escaped, causing SQL errors if certain special
+    characters such as apostrophes were included.
+  * Removed always-false check on purge in postrm (LP: #1602945)
+    Users were never seeing the query to remove data on a package purge
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 16 Sep 2016 22:23:41 +0200
+
 mysql-5.7 (5.7.15-0ubuntu1) yakkety; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.15 to fix security issues

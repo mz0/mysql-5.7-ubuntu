@@ -1,3 +1,11 @@
+mysql-5.7 (5.7.16-0ubuntu0.16.10.1) yakkety-security; urgency=medium
+
+  * SECURITY UPDATE: Update to 5.7.16 to fix security issues
+    - CVE-2016-5584
+    - CVE-2016-7440
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Mon, 24 Oct 2016 08:02:10 -0400
+
 mysql-5.7 (5.7.15-0ubuntu2) yakkety; urgency=medium
 
   * Add working dir to perl lib path for dep8 upstream.

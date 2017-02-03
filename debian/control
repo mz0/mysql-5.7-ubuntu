@@ -17,6 +17,7 @@ Build-Depends: bison,
                libaio-dev[linux-any],
                libedit-dev,
                libevent-dev,
+               libjson-perl,
                liblz4-dev,
                libncurses5-dev (>= 5.0-6),
                libnuma-dev [amd64 arm64 i386 mips mips64el mipsel powerpc ppc64el],
@@ -26,7 +27,7 @@ Build-Depends: bison,
                po-debconf,
                psmisc,
                zlib1g-dev (>= 1:1.1.3-5)
-Standards-Version: 3.9.6
+Standards-Version: 3.9.7
 Homepage: http://dev.mysql.com/
 Vcs-Git: git://anonscm.debian.org/pkg-mysql/mysql-5.7.git
 Vcs-Browser: https://anonscm.debian.org/cgit/pkg-mysql/mysql-5.7.git

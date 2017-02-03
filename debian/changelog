@@ -1,3 +1,32 @@
+mysql-5.7 (5.7.17-0ubuntu0.16.04.2) xenial; urgency=medium
+
+  * Add libjson-perl dependency for test suite (LP: #1631338)
+    The last two python tests in the mtr suite were rewritten
+    in perl, and require this package. Added for mysql-testsuite
+    and as a build-dep.
+  * Build with DWITH_LZ4=system (LP: #1631339)
+    Package was previously built with bundled liblz4, though it
+    was specified as a build-dep.
+  * Add support for custom datadir to systemd service (LP: #1574782)
+    The service was reporting an error if no database could be found in
+    /var/lib/mysql. It now checks the location specified in the config.
+    Note that user must still handle apparmor access for custom datadir.
+  * Fix copy of soft-link datadir to /var/lib/mysql-upgrade (LP: #1474212)
+    Upgrade would sometimes fail if mysql-upgrade already contained a
+    link copy from a previous upgrade.
+  * Escape special characters in password (LP: #1598992)
+    Special characters in the root password would cause syntax errors
+    and postinst failures.
+  * Failing tests on platforms supported by upstream fail build (LP: #1646488)
+    A passing test suite is now enforced on i386 and amd64 platforms at
+    build-time.
+  * d/copyright: Updated with information about new source files
+  * Unstable test main.xa_prepared_binlog_off disabled pending upstream fix.
+    Upstream bug report: http://bugs.mysql.com/bug.php?id=83340
+  * d/lintian-overrides: Updated line numbers
+
+ -- Lars Tangvald <lars.tangvald@oracle.com>  Fri, 03 Feb 2017 08:53:04 +0100
+
 mysql-5.7 (5.7.17-0ubuntu0.16.04.1) xenial-security; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.17 to fix security issues

@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,6 +19,9 @@ IF(NOT CMAKE_CROSSCOMPILING)
  TARGET_LINK_LIBRARIES(comp_sql)
 ENDIF()
 
+# Add compiler information, for easier debugging of output from mysql_config.
+SET(COMPILER_ID_AND_VERSION
+  "${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
 
 # Build mysql_fix_privilege_tables.sql (concatenate 2 sql scripts)
 IF(NOT WIN32 OR CMAKE_CROSSCOMPILING)
@@ -192,7 +195,7 @@ FOREACH(white_flag ${COMPILE_DEFINITIONS_WHITELIST})
   ENDFOREACH()
 ENDFOREACH()
 
-IF(CMAKE_BUILD_TYPE AND CMAKE_GENERATOR MATCHES "Makefiles")
+IF(CMAKE_BUILD_TYPE AND BUILD_IS_SINGLE_CONFIG)
   STRING(TOUPPER "${CMAKE_BUILD_TYPE}" CMAKEBT)
   SET(CMAKEBT_FLAGS "${CMAKE_C_FLAGS_${CMAKEBT}} ${CMAKE_C_FLAGS}")
   SEPARATE_ARGUMENTS(CMAKEBT_FLAGS)
@@ -206,6 +209,12 @@ FOREACH(white_flag ${CMAKE_C_FLAGS_WHITELIST})
     ENDIF()
   ENDFOREACH()
 ENDFOREACH()
+
+# Do not remove -std=c++11 for Solaris Studio as it is required to get
+# the correct libraries. Only remove for GCC/Clang
+IF(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  STRING(REGEX REPLACE "-std=c..[0-9]+" "" CXXFLAGS "${CXXFLAGS}")
+ENDIF()
 
 IF(UNIX)
   # SHELL_PATH, FIND_PROC, CHECK_PID are used by mysqld_safe
@@ -348,15 +357,7 @@ IF(WITH_EMBEDDED_SERVER)
 ENDIF()
 
 SET(CONFIG_CLIENT_LIBS "${CLIENT_LIBS}")
-IF(QUOTED_CMAKE_C_LINK_FLAGS)
-  SET(CONFIG_CLIENT_LIBS "${CONFIG_CLIENT_LIBS} ${QUOTED_CMAKE_C_LINK_FLAGS}")
-ENDIF()
-
 SET(CONFIG_EMBEDD_LIBS "${EMBEDD_LIBS}")
-IF(QUOTED_CMAKE_CXX_LINK_FLAGS)
-  SET(CONFIG_EMBEDD_LIBS "${CONFIG_EMBEDD_LIBS} ${QUOTED_CMAKE_CXX_LINK_FLAGS}")
-ENDIF()
-
 SET(CONFIG_LIBS_PRIVATE "${CLIENT_LIBS}")
 SET(CONFIG_REQUIRES_PRIVATE "")
 # ssl.cmake should have used pkg-config rather than cmake to locate ssl

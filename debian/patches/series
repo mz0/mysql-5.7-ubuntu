@@ -3,4 +3,3 @@ mips64el.patch
 mysql-test-run-paths
 removedojo.patch
 fix_failing_test.patch
-fix_test_events_2.patch

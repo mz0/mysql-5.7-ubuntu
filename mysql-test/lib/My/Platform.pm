@@ -107,6 +107,11 @@ sub check_socket_path_length {
 
   return 0 if IS_WINDOWS;
 
+  # See Debian bug #651002
+  return 0 if ($^O eq 'gnu');
+  # See Debian bug #670722 - failing on kFreeBSD even after setting short path
+  return 0 if length $path < 40;
+
   require IO::Socket::UNIX;
 
   my $truncated= undef;

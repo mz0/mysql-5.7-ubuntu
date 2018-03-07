@@ -96,8 +96,6 @@ SELECT @@null_audit_event_order_check;
 @@null_audit_event_order_check
 EVENT-ORDER-OK
 # SHOW GLOBAL VARIABLE
-SET @old_show_compatibility_56=@@global.show_compatibility_56;
-SET @@global.show_compatibility_56=ON;
 SET @@null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="3";;'
                                      'MYSQL_AUDIT_PARSE_PREPARSE;;;'
                                      'MYSQL_AUDIT_PARSE_POSTPARSE;;;'
@@ -113,23 +111,6 @@ EVENT-ORDER-ABORT
 SHOW GLOBAL VARIABLES LIKE 'null_audit_abort_value';
 Variable_name	Value
 null_audit_abort_value	1
-SET @@global.show_compatibility_56=OFF;
-SET @@null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="3";;'
-                                     'MYSQL_AUDIT_PARSE_PREPARSE;;;'
-                                     'MYSQL_AUDIT_PARSE_POSTPARSE;;;'
-                                     'MYSQL_AUDIT_GENERAL_LOG;;;'
-                                     'MYSQL_AUDIT_QUERY_START;sql_command_id="15";;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;ABORT_RET',
-@@null_audit_event_order_check_exact = 1;
-SHOW GLOBAL VARIABLES LIKE 'null_audit_abort_value';
-ERROR HY000: Aborted by Audit API ('MYSQL_AUDIT_GLOBAL_VARIABLE_GET';1).
-SELECT @@null_audit_event_order_check;
-@@null_audit_event_order_check
-EVENT-ORDER-ABORT
-SHOW GLOBAL VARIABLES LIKE 'null_audit_abort_value';
-Variable_name	Value
-null_audit_abort_value	1
-SET @@global.show_compatibility_56=@old_show_compatibility_56;
 # SHOW GLOBAL VARIABLE
 SET @@null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="3";;'
                                           'MYSQL_AUDIT_PARSE_PREPARSE;;;'
@@ -1188,26 +1169,6 @@ INSERT INTO test_table_2 SELECT * FROM test_table_3;
 SELECT @@null_audit_event_order_check;
 @@null_audit_event_order_check
 EVENT-ORDER-OK
-#################
-## OUTER TABLE ##
-#################
-SET @@null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="<expected_command_id>";;'
-                                          'MYSQL_AUDIT_PARSE_PREPARSE;;;'
-                                          'MYSQL_AUDIT_PARSE_POSTPARSE;;;'
-                                          'MYSQL_AUDIT_GENERAL_LOG;;;'
-                                          'MYSQL_AUDIT_QUERY_START;sql_command_id="0";;'
-                                          'MYSQL_AUDIT_TABLE_ACCESS_READ;db="super_test" table="test_table_3";;'
-                                          'MYSQL_AUDIT_QUERY_STATUS_END;sql_command_id="0";;'
-                                          'MYSQL_AUDIT_GENERAL_RESULT;;;'
-                                          'MYSQL_AUDIT_GENERAL_STATUS;;;'
-                                          'MYSQL_AUDIT_COMMAND_END;command_id="<expected_command_id>";';
-SELECT * FROM (SELECT id FROM test_table_3) AS a;
-id
-1
-2
-SELECT @@null_audit_event_order_check;
-@@null_audit_event_order_check
-EVENT-ORDER-OK
 ##########
 ## VIEW ##
 ##########
@@ -1292,25 +1253,6 @@ SELECT @@null_audit_event_order_check;
 @@null_audit_event_order_check
 EVENT-ORDER-OK
 DROP VIEW audit_view;
-###################
-## DERIVED TABLE ##
-###################
-SET @@null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="<expected_command_id>";;'
-                                          'MYSQL_AUDIT_PARSE_PREPARSE;;;'
-                                          'MYSQL_AUDIT_PARSE_POSTPARSE;;;'
-                                          'MYSQL_AUDIT_GENERAL_LOG;;;'
-                                          'MYSQL_AUDIT_QUERY_START;sql_command_id="0";;'
-                                          'MYSQL_AUDIT_TABLE_ACCESS_READ;db="super_test" table="test_table";;'
-                                          'MYSQL_AUDIT_QUERY_STATUS_END;sql_command_id="0";;'
-                                          'MYSQL_AUDIT_GENERAL_RESULT;;;'
-                                          'MYSQL_AUDIT_GENERAL_STATUS;;;'
-                                          'MYSQL_AUDIT_COMMAND_END;command_id="<expected_command_id>";';
-SELECT COUNT(*) FROM (SELECT a FROM test_table GROUP BY a) AS a1;
-COUNT(*)
-6
-SELECT @@null_audit_event_order_check;
-@@null_audit_event_order_check
-EVENT-ORDER-OK
 #########################
 ## PREPARED STATEMENTS ##
 #########################
@@ -1350,31 +1292,6 @@ EXECUTE stmt;
 SELECT * FROM test_table ORDER BY a;
 a
 1
-2
-SELECT @@null_audit_event_order_check;
-@@null_audit_event_order_check
-EVENT-ORDER-OK
-########################################################
-## PREPARED STATEMENTS - DERIVED TABLE                ##
-## Bug#23699991 EXECUTE STATEMENT CAUSES SERVER CRASH ##
-## WHEN AUDIT_LOG IS INSTALLED ON SERVER              ##
-########################################################
-PREPARE stmt FROM 'SELECT COUNT(*) FROM (SELECT a FROM test_table GROUP BY a) AS a1';
-SET @@null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="3";;'
-                                     'MYSQL_AUDIT_PARSE_PREPARSE;;;'
-                                     'MYSQL_AUDIT_PARSE_POSTPARSE;;;'
-                                     'MYSQL_AUDIT_GENERAL_LOG;;;'
-                                     'MYSQL_AUDIT_QUERY_START;sql_command_id="100";;'
-                                     'MYSQL_AUDIT_GENERAL_LOG;;;'
-                                     'MYSQL_AUDIT_QUERY_START;sql_command_id="0";;'
-                                     'MYSQL_AUDIT_TABLE_ACCESS_READ;db="super_test" table="test_table";;'
-                                     'MYSQL_AUDIT_QUERY_STATUS_END;sql_command_id="0";;'
-                                     'MYSQL_AUDIT_QUERY_STATUS_END;sql_command_id="100";;'
-                                     'MYSQL_AUDIT_GENERAL_RESULT;;;'
-                                     'MYSQL_AUDIT_GENERAL_STATUS;;;'
-                                     'MYSQL_AUDIT_COMMAND_END;command_id="3";';
-EXECUTE stmt;
-COUNT(*)
 2
 SELECT @@null_audit_event_order_check;
 @@null_audit_event_order_check
@@ -1632,21 +1549,6 @@ SET @@null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="<exp
                                      'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
                                      'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
                                      'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
-                                     'MYSQL_AUDIT_GLOBAL_VARIABLE_GET;<IGNORE>;;'
                                      'MYSQL_AUDIT_QUERY_STATUS_END;sql_command_id="0";';
 SELECT * FROM INFORMATION_SCHEMA.TABLES;
 SELECT @@null_audit_event_order_check;
@@ -1677,7 +1579,7 @@ SELECT USER(), CURRENT_USER();
 USER()	CURRENT_USER()
 user1@localhost	user1@%
 # Try to change user for a given connection (user and database specified)
-ERROR 42000: Access denied for user 'user2'@'%' to database 'mysql'
+mysqltest: At line 1: change user failed: Access denied for user 'user2'@'%' to database 'mysql'
 SELECT USER(), CURRENT_USER();
 USER()	CURRENT_USER()
 user1@localhost	user1@%
@@ -1712,19 +1614,18 @@ SET @@GLOBAL.null_audit_event_order_check = NULL,
 #--COM_CHANGE_USER
 SET @@GLOBAL.null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="17";ABORT_RET';
 # Try to change user for a given connection (user and database specified)
-ERROR 42000: Access denied for user 'user2'@'%' to database 'mysql'
+mysqltest: At line 1: change user failed: Aborted by Audit API ('MYSQL_AUDIT_COMMAND_START';1).
 # Allow 'user2' to use 'mysql' database.
 GRANT ALL ON mysql.* TO user2;
 # Change user with 'mysql' as initial database
-ERROR HY000: Aborted by Audit API ('MYSQL_AUDIT_COMMAND_START';1).
 SELECT USER(), CURRENT_USER();
 USER()	CURRENT_USER()
-user1@localhost	user1@%
+user2@localhost	user2@%
 # Reset connection
 SET @@GLOBAL.null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="31";ABORT_RET';
 SELECT USER(), CURRENT_USER();
 USER()	CURRENT_USER()
-user1@localhost	user1@%
+user2@localhost	user2@%
 ## Should no take any effect. COM_QUIT should be possible.
 SET @@GLOBAL.null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="1";ABORT_RET';
 SET @@GLOBAL.null_audit_event_order_check = NULL;
@@ -1793,14 +1694,6 @@ EVENT-ORDER-ABORT
 ###########
 SET @@null_audit_event_order_check_exact = <expected_check_exact>;
 SET @@null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="<expected_command_start_id>";;'
-                                          'MYSQL_AUDIT_PARSE_PREPARSE;;ABORT_RET';
-SELECT 1;
-ERROR HY000: Aborted by Audit API ('MYSQL_AUDIT_PARSE_PREPARSE';1).
-SELECT @@null_audit_event_order_check;
-@@null_audit_event_order_check
-EVENT-ORDER-ABORT
-SET @@null_audit_event_order_check_exact = <expected_check_exact>;
-SET @@null_audit_event_order_check = 'MYSQL_AUDIT_COMMAND_START;command_id="<expected_command_start_id>";;'
                                           'MYSQL_AUDIT_PARSE_PREPARSE;;;'
                                           'MYSQL_AUDIT_PARSE_POSTPARSE;;ABORT_RET';
 SELECT 1;
@@ -1840,20 +1733,6 @@ SELECT @@null_audit_event_order_check;
 @@null_audit_event_order_check
 EVENT-ORDER-ABORT
 ## CUSTOM ERROR MESSAGE - END ##
-##################
-## Event record ##
-##################
-SET @@null_audit_event_record_def = 'MYSQL_AUDIT_GENERAL_RESULT;MYSQL_AUDIT_COMMAND_END';
-SELECT 1;
-1
-1
-SELECT @@null_audit_event_record;
-@@null_audit_event_record
-MYSQL_AUDIT_GENERAL_RESULT;;
-MYSQL_AUDIT_GENERAL_STATUS;;
-MYSQL_AUDIT_COMMAND_END;command_id="<expected_command_id>";
-SET @@null_audit_event_record = '';
-ERROR HY000: Variable 'null_audit_event_record' is a read only variable
 UNINSTALL PLUGIN null_audit;
 Warnings:
 Warning	1620	Plugin is busy and will be uninstalled on shutdown

@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: \fBmyisam_ftdump\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 12/26/2017
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/01/2016
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.7
 .\"  Language: English
 .\"
-.TH "\FBMYISAM_FTDUMP\FR" "1" "12/26/2017" "MySQL 5\&.7" "MySQL Database System"
+.TH "\FBMYISAM_FTDUMP\FR" "1" "02/01/2016" "MySQL 5\&.7" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -27,6 +27,7 @@
 .\" -----------------------------------------------------------------
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
+.\" myisam_ftdump
 .SH "NAME"
 myisam_ftdump \- display full\-text index information
 .SH "SYNOPSIS"
@@ -136,25 +137,13 @@ shell> \fBmyisam_ftdump /usr/local/mysql/data/test/mytexttable 1\fR
 .PP
 You can use
 \fBmyisam_ftdump\fR
-to generate a list of index entries in order of frequency of occurrence like this on Unix\-like systems:
+to generate a list of index entries in order of frequency of occurrence like this:
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
 shell> \fBmyisam_ftdump \-c mytexttable 1 | sort \-r\fR
-.fi
-.if n \{\
-.RE
-.\}
-.PP
-On Windows, use:
-.sp
-.if n \{\
-.RS 4
-.\}
-.nf
-shell> \fBmyisam_ftdump \-c mytexttable 1 | sort /R\fR
 .fi
 .if n \{\
 .RE
@@ -171,6 +160,8 @@ supports the following options:
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" myisam_ftdump: help option
+.\" help option: myisam_ftdump
 \fB\-\-help\fR,
 \fB\-h\fR
 \fB\-?\fR
@@ -186,6 +177,8 @@ Display a help message and exit\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" myisam_ftdump: count option
+.\" count option: myisam_ftdump
 \fB\-\-count\fR,
 \fB\-c\fR
 .sp
@@ -200,6 +193,8 @@ Calculate per\-word statistics (counts and global weights)\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" myisam_ftdump: dump option
+.\" dump option: myisam_ftdump
 \fB\-\-dump\fR,
 \fB\-d\fR
 .sp
@@ -214,6 +209,8 @@ Dump the index, including data offsets and word weights\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" myisam_ftdump: length option
+.\" length option: myisam_ftdump
 \fB\-\-length\fR,
 \fB\-l\fR
 .sp
@@ -228,6 +225,8 @@ Report the length distribution\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" myisam_ftdump: stats option
+.\" stats option: myisam_ftdump
 \fB\-\-stats\fR,
 \fB\-s\fR
 .sp
@@ -242,6 +241,8 @@ Report global index statistics\&. This is the default operation if no other oper
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" myisam_ftdump: verbose option
+.\" verbose option: myisam_ftdump
 \fB\-\-verbose\fR,
 \fB\-v\fR
 .sp
@@ -250,7 +251,7 @@ Verbose mode\&. Print more output about what the program does\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2018, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2016, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

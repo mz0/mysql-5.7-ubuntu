@@ -1,4 +1,4 @@
-/* Copyright (c) 2001, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2001, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -33,20 +33,19 @@
 #include <execinfo.h>
 #endif
 
-#ifdef __linux__
-/* __bss_start doesn't seem to work on FreeBSD and doesn't exist on OSX/Solaris. */
 #define PTR_SANE(p) ((p) && (char*)(p) >= heap_start && (char*)(p) <= heap_end)
+
 static char *heap_start;
+
+#ifdef HAVE_BSS_START
 extern char *__bss_start;
-#else
-#define PTR_SANE(p) (p)
-#endif /* __linux */
+#endif
 
 void my_init_stacktrace()
 {
-#ifdef __linux__
+#ifdef HAVE_BSS_START
   heap_start = (char*) &__bss_start;
-#endif /* __linux__ */
+#endif
 }
 
 #ifdef __linux__
@@ -135,15 +134,14 @@ static int safe_print_str(const char *addr, int max_len)
 
 void my_safe_puts_stderr(const char* val, size_t max_len)
 {
-#ifdef __linux__
-/* Only needed by the linux version of PTR_SANE */
   char *heap_end;
 
+#ifdef __linux__
   if (!safe_print_str(val, max_len))
     return;
+#endif
 
   heap_end= (char*) sbrk(0);
-#endif
 
   if (!PTR_SANE(val))
   {
@@ -161,8 +159,8 @@ void my_safe_puts_stderr(const char* val, size_t max_len)
 /* Use Solaris' symbolic stack trace routine. */
 #include <ucontext.h>
 
-void my_print_stacktrace(uchar* stack_bottom MY_ATTRIBUTE((unused)), 
-                         ulong thread_stack MY_ATTRIBUTE((unused)))
+void my_print_stacktrace(uchar* stack_bottom __attribute__((unused)), 
+                         ulong thread_stack __attribute__((unused)))
 {
   if (printstack(fileno(stderr)) == -1)
     my_safe_printf_stderr("%s",
@@ -180,9 +178,9 @@ void my_print_stacktrace(uchar* stack_bottom MY_ATTRIBUTE((unused)),
 
 #if HAVE_ABI_CXA_DEMANGLE
 
-char MY_ATTRIBUTE ((weak)) *
-my_demangle(const char *mangled_name MY_ATTRIBUTE((unused)),
-            int *status MY_ATTRIBUTE((unused)))
+char __attribute__ ((weak)) *
+my_demangle(const char *mangled_name __attribute__((unused)),
+            int *status __attribute__((unused)))
 {
   return NULL;
 }

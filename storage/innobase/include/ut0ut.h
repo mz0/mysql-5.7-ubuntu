@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1994, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1994, 2015, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -145,7 +145,7 @@ ut_pair_cmp(
 	ulint	a_l,
 	ulint	b_h,
 	ulint	b_l)
-	MY_ATTRIBUTE((warn_unused_result));
+	__attribute__((warn_unused_result));
 
 /*************************************************************//**
 Calculates fast the remainder of n/m when m is a power of two.
@@ -196,7 +196,7 @@ ulint
 ut_2_power_up(
 /*==========*/
 	ulint	n)	/*!< in: number != 0 */
-	MY_ATTRIBUTE((const));
+	__attribute__((const));
 
 /** Determine how many bytes (groups of 8 bits) are needed to
 store the given number of bits.
@@ -241,15 +241,6 @@ purposes.
 ulint
 ut_time_ms(void);
 /*============*/
-#ifdef _WIN32
-/**********************************************************//**
-Initialise highest available time resolution API on Windows
-@return 0 if all OK else -1 */
-int
-ut_win_init_time();
-
-#endif /* _WIN32 */
-
 #endif /* !UNIV_HOTBACKUP */
 
 /**********************************************************//**
@@ -295,7 +286,7 @@ void
 ut_print_timestamp(
 /*===============*/
 	FILE*	file)	/*!< in: file where to print */
-	UNIV_COLD MY_ATTRIBUTE((nonnull));
+	UNIV_COLD __attribute__((nonnull));
 
 #ifndef UNIV_INNOCHECKSUM
 
@@ -348,7 +339,7 @@ ut_print_buf_hex(
 	std::ostream&	o,	/*!< in/out: output stream */
 	const void*	buf,	/*!< in: memory buffer */
 	ulint		len)	/*!< in: length of the buffer */
-	MY_ATTRIBUTE((nonnull));
+	__attribute__((nonnull));
 /*************************************************************//**
 Prints the contents of a memory buffer in hex and ascii. */
 void
@@ -357,7 +348,7 @@ ut_print_buf(
 	std::ostream&	o,	/*!< in/out: output stream */
 	const void*	buf,	/*!< in: memory buffer */
 	ulint		len)	/*!< in: length of the buffer */
-	MY_ATTRIBUTE((nonnull));
+	__attribute__((nonnull));
 
 #ifndef UNIV_HOTBACKUP
 /* Forward declaration of transaction handle */

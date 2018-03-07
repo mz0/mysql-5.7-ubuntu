@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -323,20 +323,6 @@ extern char *opt_log_syslog_facility;
 extern uint host_cache_size;
 extern ulong log_error_verbosity;
 
-extern bool opt_keyring_operations;
-extern char *opt_keyring_migration_user;
-extern char *opt_keyring_migration_host;
-extern char *opt_keyring_migration_password;
-extern char *opt_keyring_migration_socket;
-extern char *opt_keyring_migration_source;
-extern char *opt_keyring_migration_destination;
-extern ulong opt_keyring_migration_port;
-/**
-  Variable to check if connection related options are set
-  as part of keyring migration.
-*/
-extern bool migrate_connect_options;
-
 /** System variable show_compatibility_56. */
 extern my_bool show_compatibility_56;
 
@@ -427,8 +413,7 @@ extern PSI_mutex_key
   key_structure_guard_mutex, key_TABLE_SHARE_LOCK_ha_data,
   key_LOCK_error_messages,
   key_LOCK_log_throttle_qni, key_LOCK_query_plan, key_LOCK_thd_query,
-  key_LOCK_cost_const, key_LOCK_current_cond,
-  key_LOCK_keyring_operations;
+  key_LOCK_cost_const, key_LOCK_current_cond;
 extern PSI_mutex_key key_RELAYLOG_LOCK_commit;
 extern PSI_mutex_key key_RELAYLOG_LOCK_commit_queue;
 extern PSI_mutex_key key_RELAYLOG_LOCK_done;
@@ -447,7 +432,6 @@ extern PSI_mutex_key key_mts_gaq_LOCK;
 extern PSI_mutex_key key_thd_timer_mutex;
 extern PSI_mutex_key key_LOCK_offline_mode;
 extern PSI_mutex_key key_LOCK_default_password_lifetime;
-extern PSI_mutex_key key_LOCK_group_replication_handler;
 
 #ifdef HAVE_REPLICATION
 extern PSI_mutex_key key_commit_order_manager_mutex;
@@ -489,6 +473,7 @@ extern PSI_thread_key key_thread_bootstrap,
   key_thread_handle_manager, key_thread_main,
   key_thread_one_connection, key_thread_signal_hand,
   key_thread_compress_gtid_table, key_thread_parser_service;
+extern PSI_thread_key key_thread_daemon_plugin;
 extern PSI_thread_key key_thread_timer_notifier;
 
 extern PSI_file_key key_file_map;
@@ -751,7 +736,6 @@ extern PSI_stage_info stage_worker_waiting_for_its_turn_to_commit;
 extern PSI_stage_info stage_worker_waiting_for_commit_parent;
 extern PSI_stage_info stage_suspending;
 extern PSI_stage_info stage_starting;
-extern PSI_stage_info stage_waiting_for_no_channel_reference;
 #ifdef HAVE_PSI_STATEMENT_INTERFACE
 /**
   Statement instrumentation keys (sql).
@@ -838,8 +822,6 @@ extern mysql_rwlock_t LOCK_sys_init_connect, LOCK_sys_init_slave;
 extern mysql_rwlock_t LOCK_system_variables_hash;
 extern mysql_cond_t COND_manager;
 extern int32 thread_running;
-extern mysql_mutex_t LOCK_group_replication_handler;
-extern mysql_mutex_t LOCK_keyring_operations;
 
 extern char *opt_ssl_ca, *opt_ssl_capath, *opt_ssl_cert, *opt_ssl_cipher,
             *opt_ssl_key, *opt_ssl_crl, *opt_ssl_crlpath, *opt_tls_version;
@@ -916,16 +898,7 @@ enum options_mysqld
   OPT_SKIP_INNODB,
   OPT_AVOID_TEMPORAL_UPGRADE,
   OPT_SHOW_OLD_TEMPORALS,
-  OPT_ENFORCE_GTID_CONSISTENCY,
-  OPT_TRANSACTION_READ_ONLY,
-  OPT_TRANSACTION_ISOLATION,
-  OPT_KEYRING_MIGRATION_SOURCE,
-  OPT_KEYRING_MIGRATION_DESTINATION,
-  OPT_KEYRING_MIGRATION_USER,
-  OPT_KEYRING_MIGRATION_HOST,
-  OPT_KEYRING_MIGRATION_PASSWORD,
-  OPT_KEYRING_MIGRATION_SOCKET,
-  OPT_KEYRING_MIGRATION_PORT
+  OPT_ENFORCE_GTID_CONSISTENCY
 };
 
 
@@ -956,13 +929,7 @@ enum enum_query_type
     Change all Item_basic_constant to ? (used by query rewrite to compute
     digest.)  Un-resolved hints will also be printed in this format.
   */
-  QT_NORMALIZED_FORMAT= (1 << 8),
-  /**
-    If an expression is constant, print the expression, not the value
-    it evaluates to. Should be used for error messages, so that they
-    don't reveal values.
-  */
-  QT_NO_DATA_EXPANSION= (1 << 9),
+  QT_NORMALIZED_FORMAT= (1 << 8)
 };
 
 /* query_id */
@@ -970,7 +937,7 @@ typedef int64 query_id_t;
 extern query_id_t global_query_id;
 
 /* increment query_id and return it.  */
-inline MY_ATTRIBUTE((warn_unused_result)) query_id_t next_query_id()
+inline __attribute__((warn_unused_result)) query_id_t next_query_id()
 {
   query_id_t id= my_atomic_add64(&global_query_id, 1);
   return (id+1);
@@ -980,7 +947,7 @@ inline MY_ATTRIBUTE((warn_unused_result)) query_id_t next_query_id()
   TODO: Replace this with an inline function.
  */
 #ifndef EMBEDDED_LIBRARY
-extern "C" void unireg_abort(int exit_code) MY_ATTRIBUTE((noreturn));
+extern "C" void unireg_abort(int exit_code) __attribute__((noreturn));
 #else
 extern "C" void unireg_clear(int exit_code);
 #define unireg_abort(exit_code) do { unireg_clear(exit_code); DBUG_RETURN(exit_code); } while(0)

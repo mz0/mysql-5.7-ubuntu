@@ -31,14 +31,6 @@ SET global transaction_write_set_extraction= 1;
 SELECT @@global.transaction_write_set_extraction;
 @@global.transaction_write_set_extraction
 MURMUR32
-SET global transaction_write_set_extraction='XXHASH64';
-SELECT @@global.transaction_write_set_extraction;
-@@global.transaction_write_set_extraction
-XXHASH64
-SET global transaction_write_set_extraction= 2;
-SELECT @@global.transaction_write_set_extraction;
-@@global.transaction_write_set_extraction
-XXHASH64
 SELECT @@session.transaction_write_set_extraction;
 @@session.transaction_write_set_extraction
 OFF
@@ -46,7 +38,7 @@ SET @@SESSION.binlog_format= ROW;
 SET session transaction_write_set_extraction=DEFAULT;
 SELECT @@session.transaction_write_set_extraction;
 @@session.transaction_write_set_extraction
-XXHASH64
+MURMUR32
 SET session transaction_write_set_extraction='OFF';
 SELECT @@session.transaction_write_set_extraction;
 @@session.transaction_write_set_extraction
@@ -63,29 +55,21 @@ SET session transaction_write_set_extraction=1;
 SELECT @@session.transaction_write_set_extraction;
 @@session.transaction_write_set_extraction
 MURMUR32
-SET session transaction_write_set_extraction='XXHASH64';
-SELECT @@session.transaction_write_set_extraction;
-@@session.transaction_write_set_extraction
-XXHASH64
-SET session transaction_write_set_extraction=2;
-SELECT @@session.transaction_write_set_extraction;
-@@session.transaction_write_set_extraction
-XXHASH64
 SET session transaction_write_set_extraction='ABC';
 ERROR 42000: Variable 'transaction_write_set_extraction' can't be set to the value of 'ABC'
 SELECT @@session.transaction_write_set_extraction;
 @@session.transaction_write_set_extraction
-XXHASH64
-SET session transaction_write_set_extraction= 3;
-ERROR 42000: Variable 'transaction_write_set_extraction' can't be set to the value of '3'
+MURMUR32
+SET session transaction_write_set_extraction= 2;
+ERROR 42000: Variable 'transaction_write_set_extraction' can't be set to the value of '2'
 SELECT @@session.transaction_write_set_extraction;
 @@session.transaction_write_set_extraction
-XXHASH64
+MURMUR32
 SET session transaction_write_set_extraction='1';
 ERROR 42000: Variable 'transaction_write_set_extraction' can't be set to the value of '1'
 SELECT @@session.transaction_write_set_extraction;
 @@session.transaction_write_set_extraction
-XXHASH64
+MURMUR32
 SET @@global.transaction_write_set_extraction = @start_global_value;
 SELECT @@global.transaction_write_set_extraction;
 @@global.transaction_write_set_extraction

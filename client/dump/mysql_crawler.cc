@@ -1,5 +1,5 @@
 /*
-  Copyright (c) 2015, 2016 Oracle and/or its affiliates. All rights reserved.
+  Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -36,50 +36,22 @@ using namespace Mysql::Tools::Dump;
 Mysql_crawler::Mysql_crawler(I_connection_provider* connection_provider,
   Mysql::I_callable<bool, const Mysql::Tools::Base::Message_data&>*
     message_handler, Simple_id_generator* object_id_generator,
-  Mysql_chain_element_options* options,
-  Mysql::Tools::Base::Abstract_program* program)
-  : Abstract_crawler(message_handler, object_id_generator, program),
+  Mysql_chain_element_options* options)
+  : Abstract_crawler(message_handler, object_id_generator),
   Abstract_mysql_chain_element_extension(
   connection_provider, message_handler, options)
 {}
 
 void Mysql_crawler::enumerate_objects()
 {
-  Mysql::Tools::Base::Mysql_query_runner* runner= this->get_runner();
-  std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*> gtid_mode;
-  std::string gtid_value("OFF");
-  /* Check if the server is GTID enabled */
-  runner->run_query_store("SELECT @@global.gtid_mode", &gtid_mode);
-  if (gtid_mode.size())
-  {
-    std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*>
-      ::iterator mode_it= gtid_mode.begin();
-    const Mysql::Tools::Base::Mysql_query_runner::Row& gtid_data= **mode_it;
-    gtid_value= gtid_data[0];
-  }
-  Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&gtid_mode);
-
-  /* get the GTID_EXECUTED value */
-  std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*> gtid_executed;
-  runner->run_query_store("SELECT @@GLOBAL.GTID_EXECUTED", &gtid_executed);
-
-  std::string gtid_output_val;
-  if (gtid_executed.size())
-  {
-    std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*>
-      ::iterator gtid_executed_iter= gtid_executed.begin();
-    const Mysql::Tools::Base::Mysql_query_runner::Row& gtid_executed_val=
-      **gtid_executed_iter;
-    gtid_output_val= gtid_executed_val[0];
-  }
-  Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&gtid_executed);
-
-  m_dump_start_task= new Dump_start_dump_task(gtid_value, gtid_output_val);
+  m_dump_start_task= new Dump_start_dump_task();
   m_dump_end_task= new Dump_end_dump_task();
   m_tables_definition_ready_dump_task=
     new Tables_definition_ready_dump_task();
 
   this->process_dump_task(m_dump_start_task);
+
+  Mysql::Tools::Base::Mysql_query_runner* runner= this->get_runner();
 
   std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*> databases;
   runner->run_query_store("SHOW DATABASES", &databases);
@@ -135,7 +107,6 @@ void Mysql_crawler::enumerate_objects()
   this->report_crawler_completed(this);
 
   this->wait_for_tasks_completion();
-  delete runner;
 }
 
 void Mysql_crawler::enumerate_database_objects(const Database& db)
@@ -237,7 +208,6 @@ void Mysql_crawler::enumerate_tables(const Database& db)
     this->process_dump_task(indexes_task);
   }
   Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&tables);
-  delete runner;
 }
 
 void Mysql_crawler::enumerate_views(const Database& db)
@@ -268,9 +238,8 @@ void Mysql_crawler::enumerate_views(const Database& db)
       if (is_view[0] == "1")
       {
         /* Check if view dependent objects exists */
-        if (runner->run_query(std::string("LOCK TABLES ")
-              + this->get_quoted_object_full_name(db.get_name(), table_name)
-              + " READ") != 0)
+        if (runner->run_query(std::string("LOCK TABLES ") + db.get_name()
+                    + "." + table_name + " READ") != 0)
           return;
         else
           runner->run_query(std::string("UNLOCK TABLES"));
@@ -290,7 +259,6 @@ void Mysql_crawler::enumerate_views(const Database& db)
     Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&check_view);
   }
   Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&tables);
-  delete runner;
 }
 
 template<typename TObject>
@@ -319,7 +287,6 @@ void Mysql_crawler::enumerate_functions(const Database& db, std::string type)
     this->process_dump_task(function);
   }
   Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&functions);
-  delete runner;
 }
 
 void Mysql_crawler::enumerate_event_scheduler_events(const Database& db)
@@ -356,7 +323,6 @@ void Mysql_crawler::enumerate_event_scheduler_events(const Database& db)
     this->process_dump_task(event);
   }
   Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&events);
-  delete runner;
 }
 
 void Mysql_crawler::enumerate_users()
@@ -374,40 +340,36 @@ void Mysql_crawler::enumerate_users()
 
     std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*> create_user;
     std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*> user_grants;
-    if (runner->run_query_store(
-      "SHOW CREATE USER " + user_row[0], &create_user))
-      return;
-    if (runner->run_query_store(
-      "SHOW GRANTS FOR " + user_row[0], &user_grants))
-      return;
+    runner->run_query_store(
+      "SHOW CREATE USER " + user_row[0], &create_user);
+    runner->run_query_store(
+      "SHOW GRANTS FOR " + user_row[0], &user_grants);
 
     Abstract_dump_task* previous_grant= m_dump_start_task;
 
-    std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*> ::iterator
-      it1= create_user.begin();
-    const Mysql::Tools::Base::Mysql_query_runner::Row& create_row= **it1;
-
-    std::string user= create_row[0];
     for (std::vector<const Mysql::Tools::Base::Mysql_query_runner::Row*>
-       ::iterator it2= user_grants.begin(); it2 != user_grants.end(); ++it2)
+      ::iterator it1= create_user.begin(), it2 = user_grants.begin();
+      it1 != create_user.end(); ++it1, ++it2)
     {
+      const Mysql::Tools::Base::Mysql_query_runner::Row& create_row= **it1;
       const Mysql::Tools::Base::Mysql_query_runner::Row& grant_row= **it2;
-      user+= std::string(";\n" + grant_row[0]);
-    }
-    Privilege* grant=
-      new Privilege(
+
+      std::string user= std::string(create_row[0] + ";\n" + grant_row[0]);
+
+      Privilege* grant=
+        new Privilege(
         this->generate_new_object_id(), user_row[0], user);
 
-    grant->add_dependency(previous_grant);
-    m_dump_end_task->add_dependency(grant);
-    this->process_dump_task(grant);
-    previous_grant= grant;
-
+      grant->add_dependency(previous_grant);
+      if (it1+1 == create_user.end())
+        m_dump_end_task->add_dependency(grant);
+      this->process_dump_task(grant);
+      previous_grant= grant;
+    }
     Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&create_user);
     Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&user_grants);
   }
   Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&users);
-  delete runner;
 }
 
 void Mysql_crawler::enumerate_table_triggers(
@@ -430,10 +392,10 @@ void Mysql_crawler::enumerate_table_triggers(
     const Mysql::Tools::Base::Mysql_query_runner::Row& trigger_row= **it;
     Trigger* trigger= new Trigger(this->generate_new_object_id(),
       trigger_row[0], table.get_schema(),
-      "DELIMITER //\n" + this->get_version_specific_statement(
+      this->get_version_specific_statement(
       this->get_create_statement(
       runner, table.get_schema(), trigger_row[0], "TRIGGER", 2).value(),
-      "TRIGGER", "50017", "50003") + "\n//\n" + "DELIMITER ;\n",
+      "TRIGGER", "50017", "50003"),
       &table);
 
     trigger->add_dependency(dependency);
@@ -442,7 +404,6 @@ void Mysql_crawler::enumerate_table_triggers(
     this->process_dump_task(trigger);
   }
   Mysql::Tools::Base::Mysql_query_runner::cleanup_result(&triggers);
-  delete runner;
 }
 
 

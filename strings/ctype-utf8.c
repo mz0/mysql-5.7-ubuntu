@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
 
    This library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Library General Public
@@ -5060,30 +5060,15 @@ my_wildcmp_unicode(const CHARSET_INFO *cs,
 */
 
 static size_t
-my_strxfrm_pad_nweights_unicode(uchar *str,
-                                const uchar *const strend,
-                                size_t nweights)
+my_strxfrm_pad_nweights_unicode(uchar *str, uchar *strend, size_t nweights)
 {
-  const uchar *const str0 = str;
-  const uchar *const weightend = str + (nweights*2);
-  const uchar *const end = (weightend < strend) ? weightend : strend;
-  DBUG_ASSERT(str && str <= strend);
-
-  while (str < end-3)
+  uchar *str0;
+  DBUG_ASSERT(str && str <= strend); 
+  for (str0= str; str < strend && nweights; nweights--)
   {
     *str++= 0x00;
-    *str++= 0x20;
-    *str++= 0x00;
-    *str++= 0x20;
-  }
-  if (str < end-1)
-  {
-    *str++= 0x00;
-    *str++= 0x20;
-  }
-  if (str < end)
-  {
-    *str++= 0x00;
+    if (str < strend)
+      *str++= 0x20;
   }
   return str - str0;
 }
@@ -5104,26 +5089,15 @@ my_strxfrm_pad_nweights_unicode(uchar *str,
 */
 
 static size_t
-my_strxfrm_pad_unicode(uchar *str, const uchar *const strend)
+my_strxfrm_pad_unicode(uchar *str, uchar *strend)
 {
-  const uchar *const str0 = str;
+  uchar *str0= str;
   DBUG_ASSERT(str && str <= strend); 
-
-  while (str < strend-3)
+  for ( ; str < strend ; )
   {
     *str++= 0x00;
-    *str++= 0x20;
-    *str++= 0x00;
-    *str++= 0x20;
-  }
-  if (str < strend-1)
-  {
-    *str++= 0x00;
-    *str++= 0x20;
-  }
-  if (str < strend)
-  {
-    *str++= 0x00;
+    if (str < strend)
+      *str++= 0x20;
   }
   return str - str0;
 }
@@ -5145,9 +5119,9 @@ my_strnxfrm_unicode(const CHARSET_INFO *cs,
 {
   my_wc_t wc= 0;
   int res;
-  uchar *const dst0= dst;
-  const uchar *const de= dst + dstlen;
-  const uchar *const se= src + srclen;
+  uchar *dst0= dst;
+  uchar *de= dst + dstlen;
+  const uchar *se= src + srclen;
   const MY_UNICASE_INFO *uni_plane= (cs->state & MY_CS_BINSORT) ?
                                      NULL : cs->caseinfo;
   DBUG_ASSERT(src);
@@ -5187,9 +5161,9 @@ my_strnxfrm_unicode_full_bin(const CHARSET_INFO *cs,
                              const uchar *src, size_t srclen, uint flags)
 {
   my_wc_t wc= 0;
-  uchar *const dst0= dst;
-  const uchar *const de= dst + dstlen;
-  const uchar *const se= src + srclen;
+  uchar *dst0= dst;
+  uchar *de= dst + dstlen;
+  const uchar *se = src + srclen;
 
   DBUG_ASSERT(src);
   DBUG_ASSERT(cs->state & MY_CS_BINSORT);
@@ -5211,17 +5185,7 @@ my_strnxfrm_unicode_full_bin(const CHARSET_INFO *cs,
 
   if (flags & MY_STRXFRM_PAD_WITH_SPACE)
   {
-    const uchar *const weightend = dst + (nweights*3);
-    const uchar *const end = (weightend < de) ? weightend : de;
-
-    while (dst < end-2)
-    {
-      *dst++= 0x00;
-      *dst++= 0x00;
-      *dst++= 0x20;
-      nweights--;
-    }
-    if (dst < de && nweights > 0)
+    for ( ; dst < de && nweights; nweights--)
     {
       *dst++= 0x00;
       if (dst < de)
@@ -5237,13 +5201,7 @@ my_strnxfrm_unicode_full_bin(const CHARSET_INFO *cs,
 
   if (flags & MY_STRXFRM_PAD_TO_MAXLEN)
   {
-    while (dst < de-2)
-    {
-      *dst++= 0x00;
-      *dst++= 0x00;
-      *dst++= 0x20;
-    }
-    if (dst < de)
+    while (dst < de)
     {
       *dst++= 0x00;
       if (dst < de)
@@ -5343,7 +5301,7 @@ static inline int bincmp(const uchar *s, const uchar *se,
 }
 
 
-static int my_utf8_uni(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+static int my_utf8_uni(const CHARSET_INFO *cs __attribute__((unused)),
                        my_wc_t * pwc, const uchar *s, const uchar *e)
 {
   uchar c;
@@ -5394,7 +5352,7 @@ static int my_utf8_uni(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
   for example, for a null-terminated string
 */
 static int my_utf8_uni_no_range(const CHARSET_INFO *cs
-                                MY_ATTRIBUTE((unused)),
+                                __attribute__((unused)),
                                 my_wc_t * pwc, const uchar *s)
 {
   uchar c;
@@ -5435,7 +5393,7 @@ static int my_utf8_uni_no_range(const CHARSET_INFO *cs
 }
 
 
-static int my_uni_utf8 (const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+static int my_uni_utf8 (const CHARSET_INFO *cs __attribute__((unused)),
                         my_wc_t wc, uchar *r, uchar *e)
 {
   int count;
@@ -5459,8 +5417,9 @@ static int my_uni_utf8 (const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
     return MY_CS_TOOSMALLN(count);
 
   switch (count) {
-    case 3: r[2] = (uchar) (0x80 | (wc & 0x3f)); wc = wc >> 6; wc |= 0x800; // Fall through
-    case 2: r[1] = (uchar) (0x80 | (wc & 0x3f)); wc = wc >> 6; wc |= 0xc0;  // Fall through
+    /* Fall through all cases!!! */
+    case 3: r[2] = (uchar) (0x80 | (wc & 0x3f)); wc = wc >> 6; wc |= 0x800;
+    case 2: r[1] = (uchar) (0x80 | (wc & 0x3f)); wc = wc >> 6; wc |= 0xc0;
     case 1: r[0] = (uchar) wc;
   }
   return count;
@@ -5471,7 +5430,7 @@ static int my_uni_utf8 (const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
   The same as above, but without range check.
 */
 static int my_uni_utf8_no_range(const CHARSET_INFO *cs
-                                MY_ATTRIBUTE((unused)),
+                                __attribute__((unused)),
                                 my_wc_t wc, uchar *r)
 {
   int count;
@@ -5487,8 +5446,9 @@ static int my_uni_utf8_no_range(const CHARSET_INFO *cs
 
   switch (count)
   {
-    case 3: r[2]= (uchar) (0x80 | (wc & 0x3f)); wc= wc >> 6; wc |= 0x800; // Fall through
-    case 2: r[1]= (uchar) (0x80 | (wc & 0x3f)); wc= wc >> 6; wc |= 0xc0;  // Fall through
+    /* Fall through all cases!!! */
+    case 3: r[2]= (uchar) (0x80 | (wc & 0x3f)); wc= wc >> 6; wc |= 0x800;
+    case 2: r[1]= (uchar) (0x80 | (wc & 0x3f)); wc= wc >> 6; wc |= 0xc0;
     case 1: r[0]= (uchar) wc;
   }
   return count;
@@ -5904,7 +5864,7 @@ int my_wildcmp_utf8(const CHARSET_INFO *cs,
 
 
 static
-size_t my_strnxfrmlen_utf8(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+size_t my_strnxfrmlen_utf8(const CHARSET_INFO *cs __attribute__((unused)),
                            size_t len)
 {
   return (len * 2 + 2) / 3;
@@ -5912,7 +5872,7 @@ size_t my_strnxfrmlen_utf8(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
 
 
 static
-int my_valid_mbcharlen_utf8(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+int my_valid_mbcharlen_utf8(const CHARSET_INFO *cs __attribute__((unused)),
                             const uchar *s, const uchar *e)
 {
   uchar c;
@@ -5999,7 +5959,7 @@ static uint my_ismbchar_utf8(const CHARSET_INFO *cs,const char *b,
   return (res>1) ? res : 0;
 }
 
-static uint my_mbcharlen_utf8(const CHARSET_INFO *cs  MY_ATTRIBUTE((unused)),
+static uint my_mbcharlen_utf8(const CHARSET_INFO *cs  __attribute__((unused)),
                               uint c)
 {
   if (c < 0x80)
@@ -7521,7 +7481,7 @@ static const char filename_safe_char[128]=
 #define MY_FILENAME_ESCAPE '@'
 
 static int
-my_mb_wc_filename(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+my_mb_wc_filename(const CHARSET_INFO *cs __attribute__((unused)),
                   my_wc_t *pwc, const uchar *s, const uchar *e)
 {
   int byte1, byte2;
@@ -7581,7 +7541,7 @@ my_mb_wc_filename(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
 
 
 static int
-my_wc_mb_filename(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+my_wc_mb_filename(const CHARSET_INFO *cs __attribute__((unused)),
                   my_wc_t wc, uchar *s, uchar *e)
 {
   int code;
@@ -7845,7 +7805,7 @@ bincmp_utf8mb4(const uchar *s, const uchar *se,
 
 
 static int
-my_mb_wc_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+my_mb_wc_utf8mb4(const CHARSET_INFO *cs __attribute__((unused)),
                  my_wc_t * pwc, const uchar *s, const uchar *e)
 {
   uchar c;
@@ -7931,7 +7891,7 @@ my_mb_wc_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
   for example, for a null-terminated string
 */
 static int
-my_mb_wc_utf8mb4_no_range(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+my_mb_wc_utf8mb4_no_range(const CHARSET_INFO *cs __attribute__((unused)),
                           my_wc_t *pwc, const uchar *s)
 {
   uchar c;
@@ -7986,7 +7946,7 @@ my_mb_wc_utf8mb4_no_range(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
 
 
 static int
-my_wc_mb_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+my_wc_mb_utf8mb4(const CHARSET_INFO *cs __attribute__((unused)),
                  my_wc_t wc, uchar *r, uchar *e)
 {
   int count;
@@ -8008,9 +7968,10 @@ my_wc_mb_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
     return MY_CS_TOOSMALLN(count);
 
   switch (count) {
-    case 4: r[3] = (uchar) (0x80 | (wc & 0x3f)); wc = wc >> 6; wc |= 0x10000; // Fall through
-    case 3: r[2] = (uchar) (0x80 | (wc & 0x3f)); wc = wc >> 6; wc |= 0x800;   // Fall through
-    case 2: r[1] = (uchar) (0x80 | (wc & 0x3f)); wc = wc >> 6; wc |= 0xc0;    // Fall through
+    /* Fall through all cases!!! */
+    case 4: r[3] = (uchar) (0x80 | (wc & 0x3f)); wc = wc >> 6; wc |= 0x10000;
+    case 3: r[2] = (uchar) (0x80 | (wc & 0x3f)); wc = wc >> 6; wc |= 0x800;
+    case 2: r[1] = (uchar) (0x80 | (wc & 0x3f)); wc = wc >> 6; wc |= 0xc0;
     case 1: r[0] = (uchar) wc;
   }
   return count;
@@ -8021,7 +7982,7 @@ my_wc_mb_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
   The same as above, but without range check.
 */
 static int
-my_wc_mb_utf8mb4_no_range(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+my_wc_mb_utf8mb4_no_range(const CHARSET_INFO *cs __attribute__((unused)),
                           my_wc_t wc, uchar *r)
 {
   int count;
@@ -8039,9 +8000,10 @@ my_wc_mb_utf8mb4_no_range(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
 
   switch (count)
   {
-    case 4: r[3]= (uchar) (0x80 | (wc & 0x3f)); wc= wc >> 6; wc |= 0x10000; // Fall through
-    case 3: r[2]= (uchar) (0x80 | (wc & 0x3f)); wc= wc >> 6; wc |= 0x800;   // Fall through
-    case 2: r[1]= (uchar) (0x80 | (wc & 0x3f)); wc= wc >> 6; wc |= 0xc0;    // Fall through
+    /* Fall through all cases!!! */
+    case 4: r[3]= (uchar) (0x80 | (wc & 0x3f)); wc= wc >> 6; wc |= 0x10000;
+    case 3: r[2]= (uchar) (0x80 | (wc & 0x3f)); wc= wc >> 6; wc |= 0x800;
+    case 2: r[1]= (uchar) (0x80 | (wc & 0x3f)); wc= wc >> 6; wc |= 0xc0;
     case 1: r[0]= (uchar) wc;
   }
   return count;
@@ -8465,7 +8427,7 @@ my_wildcmp_utf8mb4(const CHARSET_INFO *cs,
 
 
 static size_t
-my_strnxfrmlen_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+my_strnxfrmlen_utf8mb4(const CHARSET_INFO *cs __attribute__((unused)),
                        size_t len)
 {
   /* TODO: fix when working on WL "Unicode new version" */
@@ -8474,7 +8436,7 @@ my_strnxfrmlen_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
 
 
 static int
-my_valid_mbcharlen_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+my_valid_mbcharlen_utf8mb4(const CHARSET_INFO *cs __attribute__((unused)),
                            const uchar *s, const uchar *e)
 {
   uchar c;
@@ -8556,7 +8518,7 @@ my_ismbchar_utf8mb4(const CHARSET_INFO *cs, const char *b, const char *e)
 
 
 static uint
-my_mbcharlen_utf8mb4(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)), uint c)
+my_mbcharlen_utf8mb4(const CHARSET_INFO *cs __attribute__((unused)), uint c)
 {
   if (c < 0x80)
     return 1;

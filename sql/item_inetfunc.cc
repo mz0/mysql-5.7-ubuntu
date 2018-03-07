@@ -92,14 +92,11 @@ longlong Item_func_inet_aton::val_int()
   }
 
 err:
-  char buf[256];
-  String err(buf, sizeof(buf), system_charset_info);
-  err.length(0);
-  args[0]->print(&err, QT_NO_DATA_EXPANSION);
+  ErrConvString err(s);
   push_warning_printf(current_thd, Sql_condition::SL_WARNING,
                       ER_WRONG_VALUE_FOR_TYPE,
                       ER_THD(current_thd, ER_WRONG_VALUE_FOR_TYPE),
-                      "string", err.c_ptr_safe(), func_name());
+                      "string", err.ptr(), func_name());
 
   return 0;
 }
@@ -123,14 +120,12 @@ String* Item_func_inet_ntoa::val_str(String* str)
     return NULL;
   if (n > (ulonglong) 4294967295LL)
   {
-    char buf[256];
-    String err(buf, sizeof(buf), system_charset_info);
-    err.length(0);
-    args[0]->print(&err, QT_NO_DATA_EXPANSION);
+    String *s= args[0]->val_str_ascii(str);
+    ErrConvString err(s);
     push_warning_printf(current_thd, Sql_condition::SL_WARNING,
                         ER_WRONG_VALUE_FOR_TYPE,
                         ER_THD(current_thd, ER_WRONG_VALUE_FOR_TYPE),
-                        "integer", err.c_ptr_safe(), func_name());
+                        "integer", err.ptr(), func_name());
     return NULL;
   }
   null_value= false;
@@ -228,14 +223,11 @@ String *Item_func_inet_str_base::val_str_ascii(String *buffer)
   }
 
 err:
-  char buf[256];
-  String err(buf, sizeof(buf), system_charset_info);
-  err.length(0);
-  args[0]->print(&err, QT_NO_DATA_EXPANSION);
+  ErrConvString err(arg_str);
   push_warning_printf(current_thd, Sql_condition::SL_WARNING,
                       ER_WRONG_VALUE_FOR_TYPE,
                       ER_THD(current_thd, ER_WRONG_VALUE_FOR_TYPE),
-                      "string", err.c_ptr_safe(), func_name());
+                      "string", err.ptr(), func_name());
   return NULL;
 }
 

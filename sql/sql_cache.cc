@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -777,7 +777,7 @@ inline Query_cache_block_table * Query_cache_block::table(TABLE_COUNTER_TYPE n)
 extern "C"
 {
 uchar *query_cache_table_get_key(const uchar *record, size_t *length,
-				my_bool not_used MY_ATTRIBUTE((unused)))
+				my_bool not_used __attribute__((unused)))
 {
   Query_cache_block* table_block = (Query_cache_block*) record;
   *length = (table_block->used - table_block->headers_len() -
@@ -3895,10 +3895,14 @@ my_bool Query_cache::ask_handler_allowance(THD *thd,
     if (tables_used->uses_materialization())
     {
       /*
-        Skip the derived table itself, but process its underlying tables and
-        other tables that follow.
+        Currently all result tables are MyISAM/Innodb or HEAP. MyISAM/Innodb
+        allows caching unless table is under in a concurrent insert
+        (which never could happen to a derived table). HEAP always allows caching.
       */
-      continue;
+      DBUG_ASSERT(table->s->db_type() == heap_hton ||
+                  table->s->db_type() == myisam_hton ||
+                  table->s->db_type() == innodb_hton);
+      DBUG_RETURN(0);
     }
 
     /*

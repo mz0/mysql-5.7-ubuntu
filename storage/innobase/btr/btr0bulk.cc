@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2014, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2014, 2015, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -764,7 +764,6 @@ BtrBulk::insert(
 	ulint		level)
 {
 	bool		is_left_most = false;
-	dberr_t		err = DB_SUCCESS;
 
 	ut_ad(m_heap != NULL);
 
@@ -773,7 +772,7 @@ BtrBulk::insert(
 		PageBulk*	new_page_bulk
 			= UT_NEW_NOKEY(PageBulk(m_index, m_trx_id, FIL_NULL,
 						level, m_flush_observer));
-		err = new_page_bulk->init();
+		dberr_t	err = new_page_bulk->init();
 		if (err != DB_SUCCESS) {
 			return(err);
 		}
@@ -800,25 +799,17 @@ BtrBulk::insert(
 	ulint		n_ext = 0;
 	ulint		rec_size = rec_get_converted_size(m_index, tuple, n_ext);
 	big_rec_t*	big_rec = NULL;
-	rec_t*		rec = NULL;
-	ulint*		offsets = NULL;
 
 	if (page_bulk->needExt(tuple, rec_size)) {
 		/* The record is so big that we have to store some fields
 		externally on separate database pages */
 		big_rec = dtuple_convert_big_rec(m_index, 0, tuple, &n_ext);
 
-		if (big_rec == NULL) {
+		if (UNIV_UNLIKELY(big_rec == NULL)) {
 			return(DB_TOO_BIG_RECORD);
 		}
 
 		rec_size = rec_get_converted_size(m_index, tuple, n_ext);
-	}
-
-	if (page_bulk->getPageZip() != NULL
-	    && page_zip_is_too_big(m_index, tuple)) {
-		err = DB_TOO_BIG_RECORD;
-		goto func_exit;
 	}
 
 	if (!page_bulk->isSpaceAvailable(rec_size)) {
@@ -827,10 +818,10 @@ BtrBulk::insert(
 		sibling_page_bulk = UT_NEW_NOKEY(PageBulk(m_index, m_trx_id,
 							  FIL_NULL, level,
 							  m_flush_observer));
-		err = sibling_page_bulk->init();
+		dberr_t	err = sibling_page_bulk->init();
 		if (err != DB_SUCCESS) {
 			UT_DELETE(sibling_page_bulk);
-			goto func_exit;
+			return(err);
 		}
 
 		/* Commit page bulk. */
@@ -838,7 +829,7 @@ BtrBulk::insert(
 		if (err != DB_SUCCESS) {
 			pageAbort(sibling_page_bulk);
 			UT_DELETE(sibling_page_bulk);
-			goto func_exit;
+			return(err);
 		}
 
 		/* Set new page bulk to page_bulks. */
@@ -852,8 +843,7 @@ BtrBulk::insert(
 		if (page_is_leaf(sibling_page_bulk->getPage())) {
 			/* Check whether trx is interrupted */
 			if (m_flush_observer->check_interrupted()) {
-				err = DB_INTERRUPTED;
-				goto func_exit;
+				return(DB_INTERRUPTED);
 			}
 
 			/* Wake up page cleaner to flush dirty pages. */
@@ -865,6 +855,8 @@ BtrBulk::insert(
 
 	}
 
+	rec_t*		rec;
+	ulint*		offsets = NULL;
 	/* Convert tuple to rec. */
         rec = rec_convert_dtuple_to_rec(static_cast<byte*>(mem_heap_alloc(
 		page_bulk->m_heap, rec_size)), m_index, tuple, n_ext);
@@ -874,6 +866,8 @@ BtrBulk::insert(
 	page_bulk->insert(rec, offsets);
 
 	if (big_rec != NULL) {
+		dberr_t		err;
+
 		ut_ad(dict_index_is_clust(m_index));
 		ut_ad(page_bulk->getLevel() == 0);
 		ut_ad(page_bulk == m_page_bulks->at(0));
@@ -892,14 +886,13 @@ BtrBulk::insert(
 			PageBulk*    page_bulk = m_page_bulks->at(level);
 			page_bulk->latch();
 		}
-	}
 
-func_exit:
-	if (big_rec != NULL) {
 		dtuple_convert_back_big_rec(m_index, tuple, big_rec);
+
+		return(err);
 	}
 
-	return(err);
+	return(DB_SUCCESS);
 }
 
 /** Btree bulk load finish. We commit the last page in each level

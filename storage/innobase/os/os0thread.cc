@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2015, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -188,32 +188,13 @@ os_thread_create_func(
 	}
 }
 
-/** Waits until the specified thread completes and joins it.
-Its return value is ignored.
-@param[in,out]	thread	thread to join */
-void
-os_thread_join(
-	os_thread_id_t	thread)
-{
-#ifdef _WIN32
-	/* Do nothing. */
-#else
-#ifdef UNIV_DEBUG
-	const int	ret =
-#endif /* UNIV_DEBUG */
-	pthread_join(thread, NULL);
-
-	/* Waiting on already-quit threads is allowed. */
-	ut_ad(ret == 0 || ret == ESRCH);
-#endif /* _WIN32 */
-}
-
-/** Exits the current thread.
-@param[in]	detach	if true, the thread will be detached right before
-exiting. If false, another thread is responsible for joining this thread */
+/*****************************************************************//**
+Exits the current thread. */
 void
 os_thread_exit(
-	bool	detach)
+/*===========*/
+	void*	exit_value)	/*!< in: exit value; in Windows this void*
+				is cast as a DWORD */
 {
 #ifdef UNIV_DEBUG_THREAD_CREATION
 	ib::info() << "Thread exits, id "
@@ -237,13 +218,11 @@ os_thread_exit(
 
 	mutex_exit(&thread_mutex);
 
-	ExitThread(0);
+	ExitThread((DWORD) exit_value);
 #else
 	mutex_exit(&thread_mutex);
-	if (detach) {
-		pthread_detach(pthread_self());
-	}
-	pthread_exit(NULL);
+	pthread_detach(pthread_self());
+	pthread_exit(exit_value);
 #endif
 }
 

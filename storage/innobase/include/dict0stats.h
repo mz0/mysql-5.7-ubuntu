@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2009, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2009, 2015, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -75,7 +75,7 @@ dict_stats_set_persistent(
 	dict_table_t*	table,	/*!< in/out: table */
 	ibool		ps_on,	/*!< in: persistent stats explicitly enabled */
 	ibool		ps_off)	/*!< in: persistent stats explicitly disabled */
-	MY_ATTRIBUTE((nonnull));
+	__attribute__((nonnull));
 
 /*********************************************************************//**
 Check whether persistent statistics is enabled for a given table.
@@ -85,7 +85,7 @@ ibool
 dict_stats_is_persistent_enabled(
 /*=============================*/
 	const dict_table_t*	table)	/*!< in: table */
-	MY_ATTRIBUTE((nonnull, warn_unused_result));
+	__attribute__((nonnull, warn_unused_result));
 
 /*********************************************************************//**
 Set the auto recalc flag for a given table (only honored for a persistent
@@ -125,7 +125,7 @@ void
 dict_stats_deinit(
 /*==============*/
 	dict_table_t*	table)	/*!< in/out: table */
-	MY_ATTRIBUTE((nonnull));
+	__attribute__((nonnull));
 
 /*********************************************************************//**
 Calculates new estimates for table and index statistics. The statistics
@@ -173,7 +173,7 @@ void
 dict_stats_update_for_index(
 /*========================*/
 	dict_index_t*	index)	/*!< in/out: index */
-	MY_ATTRIBUTE((nonnull));
+	__attribute__((nonnull));
 
 /*********************************************************************//**
 Renames a table in InnoDB persistent stats storage.
@@ -182,9 +182,6 @@ This function creates its own transaction and commits it.
 dberr_t
 dict_stats_rename_table(
 /*====================*/
-	bool		dict_locked,	/*!< in: true if dict_sys mutex
-                                        and dict_operation_lock are held,
-                                        otherwise false*/
 	const char*	old_name,	/*!< in: old table name */
 	const char*	new_name,	/*!< in: new table name */
 	char*		errstr,		/*!< out: error string if != DB_SUCCESS
@@ -203,7 +200,7 @@ dict_stats_rename_index(
 						is renamed */
 	const char*		old_index_name,	/*!< in: old index name */
 	const char*		new_index_name)	/*!< in: new index name */
-	MY_ATTRIBUTE((warn_unused_result));
+	__attribute__((warn_unused_result));
 
 #ifndef UNIV_NONINL
 #include "dict0stats.ic"

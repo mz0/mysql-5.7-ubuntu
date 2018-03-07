@@ -7502,17 +7502,16 @@ ER_SLAVE_CHANNEL_OPERATION_NOT_ALLOWED
    eng "%-.192s cannot be performed on channel '%-.192s'."
 
 ER_INVALID_JSON_TEXT 22032
-  eng "Invalid JSON text: \"%s\" at position %u in value for column '%-.200s'."
+  eng "Invalid JSON text: \"%s\" at position %u in value (or column) '%-.200s'."
 
-# The last parameter is now always empty but kept for backward compatibility
 ER_INVALID_JSON_TEXT_IN_PARAM 22032
-  eng "Invalid JSON text in argument %u to function %s: \"%s\" at position %u.%-.0s"
+  eng "Invalid JSON text in argument %u to function %s: \"%s\" at position %u in '%-.200s'."
 
 ER_INVALID_JSON_BINARY_DATA
   eng "The JSON binary value contains invalid data."
 
 ER_INVALID_JSON_PATH 42000
-  eng "Invalid JSON path expression. The error is around character position %u.%-.200s"
+  eng "Invalid JSON path expression. The error is around character position %u in '%-.200s'."
 
 ER_INVALID_JSON_CHARSET 22032
   eng "Cannot create a JSON value from a string with CHARACTER SET '%s'."
@@ -7547,13 +7546,11 @@ ER_JSON_VACUOUS_PATH 42000
 ER_JSON_BAD_ONE_OR_ALL_ARG 42000
   eng "The oneOrAll argument to %s may take these values: 'one' or 'all'."
 
-# The second parameter is now always empty but kept for backward compatibility
 ER_NUMERIC_JSON_VALUE_OUT_OF_RANGE 22003
-  eng "Out of range JSON value for CAST to %s%-.0s from column %s at row %ld"
+  eng "Out of range JSON value for CAST to %s: '%-.192s' from %s at row %ld"
 
-# The second parameter is now always empty but kept for backward compatibility
 ER_INVALID_JSON_VALUE_FOR_CAST 22018
-  eng "Invalid JSON value for CAST to %s%-.0s from column %s at row %ld"
+  eng "Invalid JSON value for CAST to %s: '%-.192s' from %s at row %ld"
 
 ER_JSON_DOCUMENT_TOO_DEEP 22032
   eng "The JSON document exceeds the maximum depth."
@@ -7641,61 +7638,6 @@ ER_INVALID_ENCRYPTION_OPTION
 
 ER_CANNOT_FIND_KEY_IN_KEYRING
   eng "Can't find master key from keyring, please check keyring plugin is loaded."
-
-ER_CAPACITY_EXCEEDED_IN_PARSER
-  eng "Parser bailed out for this query."
-
-ER_UNSUPPORTED_ALTER_ENCRYPTION_INPLACE
-  eng "Cannot alter encryption attribute by inplace algorithm."
-
-ER_KEYRING_UDF_KEYRING_SERVICE_ERROR
-  eng "Function '%s' failed because underlying keyring service returned an error. Please check if a keyring plugin is installed and that provided arguments are valid for the keyring you are using."
-
-ER_USER_COLUMN_OLD_LENGTH
-  eng "It seems that your db schema is old. The %s column is 77 characters long and should be 93 characters long. Please run mysql_upgrade."
-
-ER_CANT_RESET_MASTER
-  eng "RESET MASTER is not allowed because %-.384s."
-
-ER_GROUP_REPLICATION_MAX_GROUP_SIZE
-  eng "The START GROUP_REPLICATION command failed since the group already has 9 members."
-
-ER_CANNOT_ADD_FOREIGN_BASE_COL_STORED
-  eng "Cannot add foreign key on the base column of stored column. "
-
-ER_TABLE_REFERENCED
-  eng "Cannot complete the operation because table is referenced by another connection."
-
-ER_PARTITION_ENGINE_DEPRECATED_FOR_TABLE
-  eng "The partition engine, used by table '%-.192s.%-.192s', is deprecated and will be removed in a future release. Please use native partitioning instead."
-
-ER_WARN_USING_GEOMFROMWKB_TO_SET_SRID_ZERO 01000
-  eng "%.192s(geometry) is deprecated and will be replaced by st_srid(geometry, 0) in a future version. Use %.192s(st_aswkb(geometry), 0) instead."
-
-ER_WARN_USING_GEOMFROMWKB_TO_SET_SRID 01000
-  eng "%.192s(geometry, srid) is deprecated and will be replaced by st_srid(geometry, srid) in a future version. Use %.192s(st_aswkb(geometry), srid) instead."
-
-ER_XA_RETRY
-  eng "The resource manager is not able to commit the transaction branch at this time. Please retry later."
-
-ER_KEYRING_AWS_UDF_AWS_KMS_ERROR
-  eng "Function %s failed due to: %s."
-
-ER_BINLOG_UNSAFE_XA
-  eng "Statement is unsafe because it is being used inside a XA transaction. Concurrent XA transactions may deadlock on slaves when replicated using statements."
-
-ER_UDF_ERROR
-  eng "%s UDF failed; %s"
-
-ER_KEYRING_MIGRATION_FAILURE
-  eng "Can not perform keyring migration : %s"
-
-ER_KEYRING_ACCESS_DENIED_ERROR 42000
-  eng "Access denied; you need %-.128s privileges for this operation"a
-
-ER_KEYRING_MIGRATION_STATUS
-  eng "Keyring migration %s."
-
 #
 #  End of 5.7 error messages.
 #

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2013, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2013, 2015, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -175,7 +175,7 @@ public:
 		bool	create_new_db,
 		ulint*	sum_new_sizes,
 		lsn_t*	flush_lsn)
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
 
 private:
 	/** Check the tablespace header for this tablespace.
@@ -294,6 +294,17 @@ is_system_tablespace(
 	       || id == srv_tmp_space.space_id());
 }
 
+/** Check if it is a shared tablespace.
+@param[in]	id	Space ID to check
+@return true if id is a shared tablespace, false if not. */
+UNIV_INLINE
+bool
+is_shared_tablespace(
+	ulint	id)
+{
+	return(is_system_tablespace(id));
+}
+
 /** Check if shared-system or undo tablespace.
 @return true if shared-system or undo tablespace */
 UNIV_INLINE
@@ -302,7 +313,7 @@ is_system_or_undo_tablespace(
 	ulint   id)
 {
 	return(id == srv_sys_space.space_id()
-	       || srv_is_undo_tablespace(id));
+	       || id <= srv_undo_tablespaces_open);
 }
 
 /** Check if predefined shared tablespace.
@@ -314,7 +325,7 @@ is_predefined_tablespace(
 {
 	ut_ad(srv_sys_space.space_id() == TRX_SYS_SPACE);
 	ut_ad(TRX_SYS_SPACE == 0);
-	return(is_system_or_undo_tablespace(id)
+	return(id <= srv_undo_tablespaces_open
 	       || id == srv_tmp_space.space_id());
 }
 #endif /* fsp0sysspace_h */

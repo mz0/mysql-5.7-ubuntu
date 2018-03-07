@@ -16,7 +16,6 @@
 # [--let $use_gtids= 1]
 # [--let $wait_for_executed_gtid_set= 1]
 # [--let $ignore_gtids_on_sync= 1]
-# [--let $force_empty_channel_name= 1]
 # --source include/sync_slave.inc
 #
 # Parameters:
@@ -33,11 +32,6 @@
 #
 #   $wait_for_executed_gtid_set
 #     See include/sync_slave_sql_with_master.inc
-#
-#   $force_empty_channel_name
-#     If set, even when saved_channel_name is empty, it adds empty channel name
-#     argument to the necessary wait function.
-#
 
 --let $include_filename= sync_slave_sql.inc
 --source include/begin_include_file.inc
@@ -52,13 +46,6 @@ if (!$_sss_slave_timeout)
 if ($_saved_channel_name != '')
 {
   --let $_sss_channel_param= , '$_saved_channel_name'
-}
-if ($_saved_channel_name == '')
-{
-  if ($force_empty_channel_name)
-  {
-    --let $_sss_channel_param= , '$_saved_channel_name'
-  }
 }
 
 if ($rpl_debug)
@@ -77,20 +64,8 @@ if ($rpl_debug)
 #
 --let $_slave_master_file= query_get_value(SHOW SLAVE STATUS, Relay_Master_Log_File, 1)
 --let $_slave_master_pos= query_get_value(SHOW SLAVE STATUS, Exec_Master_Log_Pos, 1)
-
-if ($rpl_debug)
-{
-  --echo _saved_file='$_saved_file'
-  --echo _slave_master_file='$_slave_master_file'
-}
-
 if ($_slave_master_file == $_saved_file)
 {
-  if ($rpl_debug)
-  {
-    --echo _saved_pos='$_saved_pos'
-    --echo _slave_master_pos='$_slave_master_pos'
-  }
   if ($_slave_master_pos == $_saved_pos)
   {
     if ($rpl_debug)

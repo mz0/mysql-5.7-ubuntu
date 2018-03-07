@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -598,7 +598,7 @@ static bool convert_constant_item(THD *thd, Item_field *field_item,
                                      (*item)->val_date_temporal(),
                                      *item) :
 #endif
-          new Item_int_with_ref(field->type(), field->val_int(), *item,
+          new Item_int_with_ref(field->val_int(), *item,
                                 MY_TEST(field->flags & UNSIGNED_FLAG));
         if (tmp)
           thd->change_item_tree(item, tmp);
@@ -5871,16 +5871,11 @@ bool Item_cond::eq(const Item *item, bool binary_cmp) const
     return false;
   const Item_cond *item_cond= down_cast<const Item_cond *>(item);
   if (functype() != item_cond->functype() ||
-      list.elements != item_cond->list.elements ||
+      arg_count != item_cond->arg_count ||
       func_name() != item_cond->func_name())
     return false;
-  // Item_cond never uses "args". Inspect "list" instead.
-  DBUG_ASSERT(arg_count == 0 && item_cond->arg_count == 0);
-  List_iterator_fast<Item> it1(const_cast<Item_cond *>(this)->list);
-  List_iterator_fast<Item> it2(const_cast<Item_cond *>(item_cond)->list);
-  Item *i;
-  while ((i= it1++))
-    if (!i->eq(it2++, binary_cmp))
+  for (size_t i= 0; i < arg_count; ++i)
+    if (!args[i]->eq(item_cond->args[i], binary_cmp))
       return false;
   return true;
 }

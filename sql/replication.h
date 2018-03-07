@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -19,7 +19,6 @@
 #include "my_global.h"
 #include "my_thread_local.h"          // my_thread_id
 #include "mysql/psi/mysql_thread.h"   // mysql_mutex_t
-#include "handler.h"                  // enum_tx_isolation
 
 typedef struct st_mysql MYSQL;
 typedef struct st_io_cache IO_CACHE;
@@ -36,22 +35,6 @@ extern "C" {
 #endif
 
 /**
-  Struct to share server ssl variables
-*/
-struct st_server_ssl_variables
-{
-  bool have_ssl_opt;
-  char *ssl_ca;
-  char *ssl_capath;
-  char *tls_version;
-  char *ssl_cert;
-  char *ssl_cipher;
-  char *ssl_key;
-  char *ssl_crl;
-  char *ssl_crlpath;
-};
-
-/**
    Transaction observer flags.
 */
 enum Trans_flags {
@@ -65,10 +48,7 @@ enum Trans_flags {
 typedef struct Trans_table_info {
   const char* table_name;
   uint number_of_primary_keys;
-  /// The db_type of the storage engine used by the table
-  int db_type;
-  /// information to store if the table has foreign key with 'CASCADE' clause.
-  bool has_cascade_foreign_key;
+  bool transactional_table;
 } Trans_table_info;
 
 /**
@@ -88,7 +68,6 @@ typedef struct Trans_table_info {
 typedef struct Trans_context_info {
   bool  binlog_enabled;
   ulong gtid_mode;               //enum values in enum_gtid_mode
-  bool log_slave_updates;
   ulong binlog_checksum_options; //enum values in enum enum_binlog_checksum_alg
   ulong binlog_format;           //enum values in enum enum_binlog_format
   // enum values in enum_transaction_write_set_hashing_algorithm
@@ -98,8 +77,6 @@ typedef struct Trans_context_info {
   // enum values in enum_mts_parallel_type
   ulong parallel_applier_type;
   ulong parallel_applier_workers;
-  bool parallel_applier_preserve_commit_order;
-  enum_tx_isolation tx_isolation;  // enum values in enum_tx_isolation
 } Trans_context_info;
 
 /**
@@ -159,7 +136,7 @@ typedef struct Trans_param {
 /**
    Transaction observer parameter initialization.
 */
-#define TRANS_PARAM_ZERO(trans_param_obj) memset(&trans_param_obj, 0, sizeof(Trans_param));
+#define TRANS_PARAM_ZERO { 0, 0, 0, 0, 0, 0, {0, 0, 0}, 0, 0, 0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0, 0} }
 
 /**
    Observes and extends transaction execution
@@ -495,9 +472,6 @@ typedef struct Binlog_relay_IO_param {
   uint32 server_id;
   my_thread_id thread_id;
 
-  /* Channel name */
-  char* channel_name;
-
   /* Master host, user and port */
   char *host;
   char *user;
@@ -534,16 +508,6 @@ typedef struct Binlog_relay_IO_observer {
      @retval 1 Failure
   */
   int (*thread_stop)(Binlog_relay_IO_param *param);
-
-  /**
-    This callback is called when a relay log consumer thread starts
-
-    @param param Observer common parameter
-
-    @retval 0 Sucess
-    @retval 1 Failure
-  */
-  int (*applier_start)(Binlog_relay_IO_param *param);
 
   /**
      This callback is called when a relay log consumer thread stops

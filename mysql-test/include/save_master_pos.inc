@@ -9,7 +9,6 @@
 #
 # [--let $use_gtids= 1]
 # [--let $rpl_debug= 1]
-# [--let $force_empty_channel_name= 1]
 # --source include/save_master_pos.inc
 #
 # Typically, you would use this script together with
@@ -23,11 +22,7 @@
 #
 #   $rpl_debug
 #     See include/rpl_init.inc
-#
-#   $force_empty_channel_name
-#     Set it to 1 if you want to explicitly say that channel_name is
-#     empty channel name (equal to '') and not unspecified.
-#
+
 
 --let $include_filename= save_master_pos.inc
 --source include/begin_include_file.inc
@@ -42,10 +37,7 @@ if ($rpl_multi_source)
 {
   if (!$rpl_channel_name)
   {
-    if (!$force_empty_channel_name)
-    {
-      --let $_saved_channel_name= `SELECT CONCAT('channel_', @@GLOBAL.SERVER_ID)`
-    }
+    --let $_saved_channel_name= `SELECT CONCAT('channel_', @@GLOBAL.SERVER_ID)`
   }
 }
 if ($use_gtids)

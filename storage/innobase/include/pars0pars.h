@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2015, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -434,7 +434,7 @@ pars_complete_graph_for_exec(
 	trx_t*		trx,
 	mem_heap_t*	heap,
 	row_prebuilt_t*	prebuilt)
-	MY_ATTRIBUTE((nonnull(2,3), warn_unused_result));
+	__attribute__((nonnull(2,3), warn_unused_result));
 
 /****************************************************************//**
 Create parser info struct.
@@ -577,7 +577,7 @@ pars_info_bind_ull_literal(
 	pars_info_t*		info,	/*!< in: info struct */
 	const char*		name,	/*!< in: name */
 	const ib_uint64_t*	val)	/*!< in: value */
-	MY_ATTRIBUTE((nonnull));
+	__attribute__((nonnull));
 
 /****************************************************************//**
 Add bound id. */

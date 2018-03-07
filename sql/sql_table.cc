@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017 Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -90,15 +90,12 @@ static bool check_engine(THD *thd, const char *db_name,
                          HA_CREATE_INFO *create_info);
 
 static int
-mysql_prepare_create_table(THD *thd, const char *error_schema_name,
-                           const char *error_table_name,
-                           HA_CREATE_INFO *create_info,
+mysql_prepare_create_table(THD *thd, HA_CREATE_INFO *create_info,
                            Alter_info *alter_info,
                            bool tmp_table,
                            uint *db_options,
                            handler *file, KEY **key_info_buffer,
                            uint *key_count, int select_field_count);
-static uint blob_length_by_type(enum_field_types type);
 
 
 /**
@@ -1218,7 +1215,6 @@ static bool execute_ddl_log_action(THD *thd, DDL_LOG_ENTRY *ddl_log_entry)
         action in the log entry by stepping up the phase.
       */
     }
-    // Fall through
     case DDL_LOG_RENAME_ACTION:
     {
       error= TRUE;
@@ -1886,9 +1882,7 @@ bool mysql_write_frm(ALTER_PARTITION_PARAM_TYPE *lpt, uint flags)
       part_handler->set_part_info(lpt->part_info, false);
     }
 
-    if (mysql_prepare_create_table(lpt->thd, lpt->db,
-                                   lpt->table_name,
-                                   lpt->create_info,
+    if (mysql_prepare_create_table(lpt->thd, lpt->create_info,
                                    lpt->alter_info,
                                    /*tmp_table*/ 1,
                                    &lpt->db_options,
@@ -2733,13 +2727,7 @@ err:
                                    is_drop_tmp_if_exists_with_no_defaultdb/*suppress_use*/,
                                    0/*errcode*/);
       }
-      /*
-        When the DROP TABLE command is used to drop a single table and if that
-        command fails then the query cannot generate 'partial results'. In
-        that case the query will not be written to the binary log.
-      */
-      if (non_tmp_table_deleted &&
-          (thd->lex->select_lex->table_list.elements > 1 || !error))
+      if (non_tmp_table_deleted)
       {
         /// @see comment for mysql_bin_log.commit above.
         if (non_trans_tmp_table_deleted || trans_tmp_table_deleted ||
@@ -2762,14 +2750,6 @@ err:
                                    false/*suppress_use*/,
                                    error_code);
       }
-    }
-    else if (error)
-    {
-      /*
-        We do not care the returned value, since it goes ahead
-        with error branch in any case.
-      */
-      (void) commit_owned_gtid_by_partial_command(thd);
     }
   }
 
@@ -3336,18 +3316,15 @@ void promote_first_timestamp_column(List<Create_field> *column_definitions)
 /**
   Check if there is a duplicate key. Report a warning for every duplicate key.
 
-  @param thd                Thread context.
-  @param error_schema_name  Schema name of the table used for error reporting.
-  @param error_table_name   Table name used for error reporting.
-  @param key                Key to be checked.
-  @param key_info           Key meta-data info.
-  @param alter_info         List of columns and indexes to create.
+  @param thd              Thread context.
+  @param key              Key to be checked.
+  @param key_info         Key meta-data info.
+  @param alter_info       List of columns and indexes to create.
 
   @retval false           Ok.
   @retval true            Error.
 */
-static bool check_duplicate_key(THD *thd, const char *error_schema_name,
-                                const char *error_table_name,
+static bool check_duplicate_key(THD *thd,
                                 Key *key, KEY *key_info,
                                 Alter_info *alter_info)
 {
@@ -3427,8 +3404,8 @@ static bool check_duplicate_key(THD *thd, const char *error_schema_name,
       push_warning_printf(thd, Sql_condition::SL_WARNING,
                           ER_DUP_INDEX, ER(ER_DUP_INDEX),
                           key_info->name,
-                          error_schema_name,
-                          error_table_name);
+                          thd->lex->query_tables->db,
+                          thd->lex->query_tables->table_name);
       if (thd->is_error())
       {
         // An error was reported.
@@ -3447,10 +3424,6 @@ static bool check_duplicate_key(THD *thd, const char *error_schema_name,
   SYNOPSIS
     mysql_prepare_create_table()
       thd                       Thread object.
-      error_schema_name         Schema name of the table to create/alter,only
-                                used for error reporting.
-      error_table_name          Name of table to create/alter, only used for
-                                error reporting.
       create_info               Create information (like MAX_ROWS).
       alter_info                List of columns and indexes to create
       tmp_table                 If a temporary table is to be created.
@@ -3472,9 +3445,7 @@ static bool check_duplicate_key(THD *thd, const char *error_schema_name,
 */
 
 static int
-mysql_prepare_create_table(THD *thd, const char *error_schema_name,
-                           const char *error_table_name,
-                           HA_CREATE_INFO *create_info,
+mysql_prepare_create_table(THD *thd, HA_CREATE_INFO *create_info,
                            Alter_info *alter_info,
                            bool tmp_table,
                            uint *db_options,
@@ -3493,21 +3464,6 @@ mysql_prepare_create_table(THD *thd, const char *error_schema_name,
   List_iterator<Create_field> it2(alter_info->create_list);
   uint total_uneven_bit_length= 0;
   DBUG_ENTER("mysql_prepare_create_table");
-
-  LEX_STRING* connect_string = &create_info->connect_string;
-  if (connect_string->length != 0 &&
-      connect_string->length > CONNECT_STRING_MAXLEN &&
-      (system_charset_info->cset->charpos(system_charset_info,
-                                          connect_string->str,
-                                          (connect_string->str +
-                                           connect_string->length),
-                                          CONNECT_STRING_MAXLEN)
-      < connect_string->length))
-  {
-    my_error(ER_WRONG_STRING_LENGTH, MYF(0),
-             connect_string->str, "CONNECTION", CONNECT_STRING_MAXLEN);
-    DBUG_RETURN(TRUE);
-  }
 
   select_field_pos= alter_info->create_list.elements - select_field_count;
   null_fields=blob_columns=0;
@@ -4328,8 +4284,8 @@ mysql_prepare_create_table(THD *thd, const char *error_schema_name,
             than the BLOB field max size. We handle this case
             using the max_field_size variable below.
           */
-          size_t max_field_size= blob_length_by_type(sql_field->sql_type);
-	  if (key_part_length > max_field_size ||
+          size_t max_field_size= sql_field->key_length * sql_field->charset->mbmaxlen;
+	  if ((max_field_size && key_part_length > max_field_size) ||
               key_part_length > max_key_length ||
 	      key_part_length > file->max_key_part_length())
 	  {
@@ -4497,8 +4453,7 @@ mysql_prepare_create_table(THD *thd, const char *error_schema_name,
     }
 
     // Check if a duplicate index is defined.
-  if (check_duplicate_key(thd, error_schema_name, error_table_name,
-                          key, key_info, alter_info))
+  if (check_duplicate_key(thd, key, key_info, alter_info))
       DBUG_RETURN(true);
 
     key_info++;
@@ -4797,8 +4752,6 @@ static void sp_prepare_create_field(THD *thd, Create_field *sql_field)
   @param thd                 Thread object
   @param db                  Database
   @param table_name          Table name
-  @param error_table_name    The real table name in case table_name is a temporary
-                             table (ALTER). Only used for error messages.
   @param path                Path to table (i.e. to its .FRM file without
                              the extension).
   @param create_info         Create information (like MAX_ROWS)
@@ -4831,7 +4784,6 @@ static void sp_prepare_create_field(THD *thd, Create_field *sql_field)
 static
 bool create_table_impl(THD *thd,
                        const char *db, const char *table_name,
-                       const char *error_table_name,
                        const char *path,
                        HA_CREATE_INFO *create_info,
                        Alter_info *alter_info,
@@ -5128,8 +5080,7 @@ bool create_table_impl(THD *thd,
     }
   }
 
-  if (mysql_prepare_create_table(thd, db, error_table_name,
-                                 create_info, alter_info,
+  if (mysql_prepare_create_table(thd, create_info, alter_info,
                                  internal_tmp_table,
                                  &db_options, file,
                                  key_info, key_count,
@@ -5412,9 +5363,9 @@ bool mysql_create_table_no_lock(THD *thd,
     }
   }
 
-  return create_table_impl(thd, db, table_name, table_name, path, create_info,
-                           alter_info, false, select_field_count, false,
-                           is_trans, &not_used_1, &not_used_2);
+  return create_table_impl(thd, db, table_name, path, create_info, alter_info,
+                           false, select_field_count, false, is_trans,
+                           &not_used_1, &not_used_2);
 }
 
 
@@ -5822,8 +5773,7 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST* src_table,
   /*
     We have to write the query before we unlock the tables.
   */
-  if (!thd->is_current_stmt_binlog_disabled() &&
-      thd->is_current_stmt_binlog_format_row())
+  if (thd->is_current_stmt_binlog_format_row())
   {
     /*
        Since temporary tables are not replicated under row-based
@@ -5872,22 +5822,7 @@ bool mysql_create_like_table(THD* thd, TABLE_LIST* table, TABLE_LIST* src_table,
             new_table= TRUE;
           }
 
-          /*
-            After opening a MERGE table add the children to the query list of
-            tables, so that children tables info can be used on "CREATE TABLE"
-            statement generation by the binary log.
-            Note that placeholders don't have the handler open.
-          */
-          if (table->table->file->extra(HA_EXTRA_ADD_CHILDREN_LIST))
-            goto err;
-
-          /*
-            As the reference table is temporary and may not exist on slave, we must
-            force the ENGINE to be present into CREATE TABLE.
-          */
-          create_info->used_fields|= HA_CREATE_USED_ENGINE;
-
-          int result MY_ATTRIBUTE((unused))=
+          int result __attribute__((unused))=
             store_create_info(thd, table, &query,
                               create_info, TRUE /* show_database */);
 
@@ -6979,8 +6914,8 @@ bool mysql_compare_tables(TABLE *table,
   KEY *key_info_buffer= NULL;
 
   /* Create the prepared information. */
-  if (mysql_prepare_create_table(thd, "", "",
-                                 create_info, &tmp_alter_info,
+  if (mysql_prepare_create_table(thd, create_info,
+                                 &tmp_alter_info,
                                  (table->s->tmp_table != NO_TMP_TABLE),
                                  &db_options,
                                  table->file, &key_info_buffer,
@@ -7097,40 +7032,6 @@ bool mysql_compare_tables(TABLE *table,
 
   *metadata_equal= true; // Tables are compatible
   DBUG_RETURN(false);
-}
-
-
-/**
-   Report a zero date warning if no default value is supplied
-   for the DATE/DATETIME 'NOT NULL' field and 'NO_ZERO_DATE'
-   sql_mode is enabled.
-
-   @param thd                Thread handle.
-   @param datetime_field     DATE/DATETIME column definition.
-*/
-static void push_zero_date_warning(THD *thd, Create_field *datetime_field)
-{
-  uint f_length= 0;
-  enum enum_mysql_timestamp_type t_type= MYSQL_TIMESTAMP_DATE;
-
-  switch (datetime_field->sql_type)
-  {
-  case MYSQL_TYPE_DATE:
-  case MYSQL_TYPE_NEWDATE:
-    f_length= MAX_DATE_WIDTH; // "0000-00-00";
-    t_type= MYSQL_TIMESTAMP_DATE;
-    break;
-  case MYSQL_TYPE_DATETIME:
-  case MYSQL_TYPE_DATETIME2:
-    f_length= MAX_DATETIME_WIDTH; // "0000-00-00 00:00:00";
-    t_type= MYSQL_TIMESTAMP_DATETIME;
-    break;
-  default:
-    DBUG_ASSERT(false);  // Should not get here.
-  }
-  make_truncated_value_warning(thd, Sql_condition::SL_WARNING,
-                               ErrConvString(my_zero_datetime6, f_length),
-                               t_type, datetime_field->field_name);
 }
 
 
@@ -7264,26 +7165,6 @@ static bool is_inplace_alter_impossible(TABLE *table,
   if (!table->s->mysql_version)
     DBUG_RETURN(true);
 
-  /*
-    If default value is changed and the table includes or will include
-    generated columns that depend on the DEFAULT function, we cannot
-    do the operation inplace as indexes or value of stored generated
-    columns might become invalid.
-  */
-  if ((alter_info->flags &
-       (Alter_info::ALTER_CHANGE_COLUMN_DEFAULT |
-        Alter_info::ALTER_CHANGE_COLUMN)) &&
-       table->has_gcol())
-  {
-    for (Field **vfield= table->vfield; *vfield; vfield++)
-    {
-      if ((*vfield)->gcol_info->expr_item->walk(
-           &Item::check_gcol_depend_default_processor,
-           Item::WALK_POSTFIX, NULL))
-        DBUG_RETURN(true);
-    }
-  }
-
   DBUG_RETURN(false);
 }
 
@@ -7406,43 +7287,29 @@ static bool mysql_inplace_alter_table(THD *thd,
   if (lock_tables(thd, table_list, alter_ctx->tables_opened, 0))
     goto cleanup;
 
-  if (alter_ctx->error_if_not_empty)
+  if (alter_ctx->error_if_not_empty & Alter_table_ctx::GEOMETRY_WITHOUT_DEFAULT)
   {
-    bool has_records= true;
-    DBUG_ASSERT(table->mdl_ticket->get_type() == MDL_EXCLUSIVE);
-    if (table_list->table->file->ha_table_flags() & HA_HAS_RECORDS)
-    {
-      ha_rows tmp= 0;
-      if (!table_list->table->file->ha_records(&tmp) && tmp == 0)
-        has_records= false;
-    }
-    else if(table_list->table->contains_records(thd, &has_records))
+    // We should have upgraded from MDL_SHARED_UPGRADABLE to a lock
+    // blocking writes for it to be safe to check ha_records().
+    if (table->mdl_ticket->get_type() == MDL_SHARED_UPGRADABLE)
     {
       my_error(ER_INVALID_USE_OF_NULL, MYF(0));
       goto cleanup;
     }
 
-    if (has_records)
+    // Check if the handler supports ha_records()
+    if (!(table_list->table->file->ha_table_flags() & HA_HAS_RECORDS))
     {
-      if (alter_ctx->error_if_not_empty &
-          Alter_table_ctx::GEOMETRY_WITHOUT_DEFAULT)
-      {
-        my_error(ER_INVALID_USE_OF_NULL, MYF(0));
-      }
-      else if ((alter_ctx->error_if_not_empty &
-                Alter_table_ctx::DATETIME_WITHOUT_DEFAULT) &&
-               (thd->variables.sql_mode & MODE_NO_ZERO_DATE))
-      {
-        /*
-          Report a warning if the NO ZERO DATE MODE is enabled. The
-          warning will be promoted to an error if strict mode is
-          also enabled.
-        */
-        push_zero_date_warning(thd, alter_ctx->datetime_field);
-      }
+      // If ha_records() is not supported, be conservative.
+      my_error(ER_INVALID_USE_OF_NULL, MYF(0));
+      goto cleanup;
+    }
 
-      if (thd->is_error())
-        goto cleanup;
+    ha_rows tmp= 0;
+    if (table_list->table->file->ha_records(&tmp) || tmp > 0)
+    {
+      my_error(ER_INVALID_USE_OF_NULL, MYF(0));
+      goto cleanup;
     }
 
     // Empty table, so don't allow inserts during inplace operation.
@@ -8075,51 +7942,40 @@ mysql_prepare_alter_table(THD *thd, TABLE *table,
     }
 
     /*
-      New columns of type DATE/DATETIME/GEOMETRIC with NOT NULL constraint
-      added as part of ALTER operation will generate zero date for DATE/
-      DATETIME types and empty string for GEOMETRIC types when the table
-      is not empty. Hence certain additional checks needs to be performed
-      as described below. This cannot be caught by SE(For INPLACE ALTER)
-      since it checks for only NULL value. Zero date and empty string
-      does not violate the NOT NULL value constraint.
+      Check that the DATE/DATETIME not null field we are going to add is
+      either has a default value or the '0000-00-00' is allowed by the
+      set sql mode.
+      If the '0000-00-00' value isn't allowed then raise the error_if_not_empty
+      flag to allow ALTER TABLE only if the table to be altered is empty.
     */
-    if (!def->change)
+    if ((def->sql_type == MYSQL_TYPE_DATE ||
+         def->sql_type == MYSQL_TYPE_NEWDATE ||
+         def->sql_type == MYSQL_TYPE_DATETIME ||
+         def->sql_type == MYSQL_TYPE_DATETIME2) &&
+         !alter_ctx->datetime_field &&
+         !(~def->flags & (NO_DEFAULT_VALUE_FLAG | NOT_NULL_FLAG)) &&
+         thd->is_strict_mode())
     {
-      /*
-        Check that the DATE/DATETIME not null field we are going to add is
-        either has a default value or the '0000-00-00' is allowed by the
-        set sql mode.
-        If the '0000-00-00' value isn't allowed then raise the error_if_not_empty
-        flag to allow ALTER TABLE only if the table to be altered is empty.
-      */
-      if ((def->sql_type == MYSQL_TYPE_DATE ||
-           def->sql_type == MYSQL_TYPE_NEWDATE ||
-           def->sql_type == MYSQL_TYPE_DATETIME ||
-           def->sql_type == MYSQL_TYPE_DATETIME2) &&
-          !alter_ctx->datetime_field &&
-          !(~def->flags & (NO_DEFAULT_VALUE_FLAG | NOT_NULL_FLAG)))
-      {
         alter_ctx->datetime_field= def;
         alter_ctx->error_if_not_empty|=
           Alter_table_ctx::DATETIME_WITHOUT_DEFAULT;
-      }
+    }
 
-      /*
-        New GEOMETRY (and subtypes) columns can't be NOT NULL. To add a
-        GEOMETRY NOT NULL column, first create a GEOMETRY NULL column,
-        UPDATE the table to set a different value than NULL, and then do
-        a ALTER TABLE MODIFY COLUMN to set NOT NULL.
+    /*
+      New GEOMETRY (and subtypes) columns can't be NOT NULL. To add a
+      GEOMETRY NOT NULL column, first create a GEOMETRY NULL column,
+      UPDATE the table to set a different value than NULL, and then do
+      a ALTER TABLE MODIFY COLUMN to set NOT NULL.
 
-        This restriction can be lifted once MySQL supports default
-        values (i.e., functions) for geometry columns. The new
-        restriction would then be for added GEOMETRY NOT NULL columns to
-        always have a provided default value.
-      */
-      if (def->sql_type == MYSQL_TYPE_GEOMETRY &&
-          (def->flags & (NO_DEFAULT_VALUE_FLAG | NOT_NULL_FLAG)))
-      {
-        alter_ctx->error_if_not_empty|= Alter_table_ctx::GEOMETRY_WITHOUT_DEFAULT;
-      }
+      This restriction can be lifted once MySQL supports default
+      values (i.e., functions) for geometry columns. The new
+      restriction would then be for added GEOMETRY NOT NULL columns to
+      always have a provided default value.
+    */
+    if (def->sql_type == MYSQL_TYPE_GEOMETRY &&
+        (def->flags & (NO_DEFAULT_VALUE_FLAG | NOT_NULL_FLAG)))
+    {
+      alter_ctx->error_if_not_empty|= Alter_table_ctx::GEOMETRY_WITHOUT_DEFAULT;
     }
 
     if (!def->after)
@@ -8954,38 +8810,7 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
                        TABLE_LIST *table_list,
                        Alter_info *alter_info)
 {
-  class Silence_deprecation_warnings: public Internal_error_handler
-  {
-  private:
-    THD *m_thd;
-  public:
-    Silence_deprecation_warnings(THD *thd): m_thd(thd)
-    { m_thd->push_internal_handler(this); }
-    bool handle_condition(THD *thd,
-                          uint sql_errno,
-                          const char* sqlstate,
-                          Sql_condition::enum_severity_level *level,
-                          const char* msg)
-    {
-      if (sql_errno == ER_WARN_DEPRECATED_SYNTAX)
-        return true;
-
-      return false;
-    }
-    void pop()
-    {
-      if (m_thd)
-        m_thd->pop_internal_handler();
-      m_thd= NULL;
-    }
-    ~Silence_deprecation_warnings()
-    { pop(); }
-  };
-
   DBUG_ENTER("mysql_alter_table");
-
-  Silence_deprecation_warnings deprecation_silencer(thd);
-  bool is_partitioned= false;
 
   /*
     Check if we attempt to alter mysql.slow_log or
@@ -9103,15 +8928,6 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
   TABLE *table= table_list->table;
   table->use_all_columns();
   MDL_ticket *mdl_ticket= table->mdl_ticket;
-
-  /*
-    Check if the source table is non-natively partitioned. This will be
-    used for pushing a deprecation warning in cases like adding/dropping
-    partitions, table rename, and ALTER INPLACE. For ALTER COPY, we need
-    to check the destination table.
-  */
-  is_partitioned= table->s->db_type() &&
-          is_ha_partition_handlerton(table->s->db_type());
 
   /*
     Prohibit changing of the UNION list of a non-temporary MERGE table
@@ -9238,8 +9054,7 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
    till this point for the alter operation.
   */
   if ((alter_info->flags & Alter_info::ADD_FOREIGN_KEY) &&
-      check_fk_parent_table_access(thd, alter_ctx.new_db,
-                                   create_info, alter_info))
+      check_fk_parent_table_access(thd, create_info, alter_info))
     DBUG_RETURN(true);
 
   /*
@@ -9284,13 +9099,6 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
                "LOCK=NONE/SHARED", "LOCK=EXCLUSIVE");
       DBUG_RETURN(true);
     }
-    deprecation_silencer.pop();
-    if (is_partitioned)
-      push_warning_printf(thd, Sql_condition::SL_WARNING,
-                          ER_WARN_DEPRECATED_SYNTAX,
-                          ER_THD(thd,
-                                 ER_PARTITION_ENGINE_DEPRECATED_FOR_TABLE),
-                          alter_ctx.new_db, alter_ctx.new_alias);
     DBUG_RETURN(simple_rename_or_index_change(thd, table_list,
                                               alter_info->keys_onoff,
                                               &alter_ctx));
@@ -9380,13 +9188,6 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
     }
 
     char* table_name= const_cast<char*>(alter_ctx.table_name);
-    deprecation_silencer.pop();
-    if (is_partitioned)
-      push_warning_printf(thd, Sql_condition::SL_WARNING,
-                          ER_WARN_DEPRECATED_SYNTAX,
-                          ER_THD(thd,
-                                 ER_PARTITION_ENGINE_DEPRECATED_FOR_TABLE),
-                          alter_ctx.new_db, alter_ctx.new_alias);
     // In-place execution of ALTER TABLE for partitioning.
     DBUG_RETURN(fast_alter_partition_table(thd, table, alter_info,
                                            create_info, table_list,
@@ -9543,7 +9344,6 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
 
   tmp_disable_binlog(thd);
   error= create_table_impl(thd, alter_ctx.new_db, alter_ctx.tmp_name,
-                           alter_ctx.table_name,
                            alter_ctx.get_tmp_path(),
                            create_info, alter_info,
                            true, 0, true, NULL,
@@ -9906,12 +9706,6 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
   }
 
   /*
-    At this point, we must check whether the destination table is
-    non-natively partitioned.
-  */
-  is_partitioned= new_table->s->db_type() &&
-          is_ha_partition_handlerton(new_table->s->db_type());
-  /*
     Close the intermediate table that will be the new table, but do
     not delete it! Even altough MERGE tables do not have their children
     attached here it is safe to call close_temporary_table().
@@ -10013,18 +9807,11 @@ bool mysql_alter_table(THD *thd, const char *new_db, const char *new_name,
   }
 
 end_inplace:
+
   thd->count_cuted_fields= CHECK_FIELD_IGNORE;
 
   if (thd->locked_tables_list.reopen_tables(thd))
     goto err_with_mdl;
-
-  deprecation_silencer.pop();
-  if (is_partitioned)
-    push_warning_printf(thd, Sql_condition::SL_WARNING,
-                        ER_WARN_DEPRECATED_SYNTAX,
-                        ER_THD(thd,
-                               ER_PARTITION_ENGINE_DEPRECATED_FOR_TABLE),
-                        alter_ctx.new_db, alter_ctx.new_alias);
 
   THD_STAGE_INFO(thd, stage_end);
 
@@ -10098,18 +9885,41 @@ err_new_table_cleanup:
   {
     my_error(ER_INVALID_USE_OF_NULL, MYF(0));
   }
-
-  /*
-    No default value was provided for a DATE/DATETIME field, the
-    current sql_mode doesn't allow the '0000-00-00' value and
-    the table to be altered isn't empty.
-    Report error here.
-  */
   if ((alter_ctx.error_if_not_empty &
        Alter_table_ctx::DATETIME_WITHOUT_DEFAULT) &&
-      (thd->variables.sql_mode & MODE_NO_ZERO_DATE) &&
       thd->get_stmt_da()->current_row_for_condition())
-    push_zero_date_warning(thd, alter_ctx.datetime_field);
+  {
+    /*
+      No default value was provided for a DATE/DATETIME field, the
+      current sql_mode doesn't allow the '0000-00-00' value and
+      the table to be altered isn't empty.
+      Report error here.
+    */
+    uint f_length;
+    enum enum_mysql_timestamp_type t_type= MYSQL_TIMESTAMP_DATE;
+    switch (alter_ctx.datetime_field->sql_type)
+    {
+      case MYSQL_TYPE_DATE:
+      case MYSQL_TYPE_NEWDATE:
+        f_length= MAX_DATE_WIDTH; // "0000-00-00";
+        t_type= MYSQL_TIMESTAMP_DATE;
+        break;
+      case MYSQL_TYPE_DATETIME:
+      case MYSQL_TYPE_DATETIME2:
+        f_length= MAX_DATETIME_WIDTH; // "0000-00-00 00:00:00";
+        t_type= MYSQL_TIMESTAMP_DATETIME;
+        break;
+      default:
+        /* Shouldn't get here. */
+        f_length= 0;
+        DBUG_ASSERT(0);
+    }
+    make_truncated_value_warning(thd, Sql_condition::SL_WARNING,
+                                 ErrConvString(my_zero_datetime6, f_length),
+                                 t_type,
+                                 alter_ctx.datetime_field->field_name);
+  }
+
   DBUG_RETURN(true);
 
 err_with_mdl:
@@ -10308,18 +10118,8 @@ copy_data_between_tables(PSI_stage_progress *psi,
       error= 1;
       break;
     }
-    /*
-      Return error if source table isn't empty.
-
-      For a DATE/DATETIME field, return error only if strict mode
-      and No ZERO DATE mode is enabled.
-    */
-    if ((alter_ctx->error_if_not_empty &
-         Alter_table_ctx::GEOMETRY_WITHOUT_DEFAULT) ||
-        ((alter_ctx->error_if_not_empty &
-          Alter_table_ctx::DATETIME_WITHOUT_DEFAULT) &&
-         (thd->variables.sql_mode & MODE_NO_ZERO_DATE) &&
-         thd->is_strict_mode()))
+    /* Return error if source table isn't empty. */
+    if (alter_ctx->error_if_not_empty)
     {
       error= 1;
       break;

@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -52,21 +52,6 @@ Created 10/25/1995 Heikki Tuuri
 #include "srv0start.h"
 #include "trx0purge.h"
 #include "ut0new.h"
-#include "btr0sea.h"
-#include "log0log.h"
-
-/** Tries to close a file in the LRU list. The caller must hold the fil_sys
-mutex.
-@return true if success, false if should retry later; since i/o's
-generally complete in < 100 ms, and as InnoDB writes at most 128 pages
-from the buffer pool in a batch, and then immediately flushes the
-files, there is a good chance that the next time we find a suitable
-node from the LRU list.
-@param[in] print_info	if true, prints information why it
-                        cannot close a file */
-static
-bool
-fil_try_to_close_file_in_LRU(bool print_info);
 
 /*
 		IMPLEMENTATION OF THE TABLESPACE MEMORY CACHE
@@ -232,7 +217,7 @@ bool
 fil_is_user_tablespace_id(
 	ulint	space_id)
 {
-	return(!srv_is_undo_tablespace(space_id)
+	return(space_id > srv_undo_tablespaces_open
 	       && space_id != srv_tmp_space.space_id());
 }
 
@@ -545,13 +530,15 @@ Try and enable FusionIO atomic writes.
 @param[in] file		OS file handle
 @return true if successful */
 bool
-fil_fusionio_enable_atomic_write(pfs_os_file_t file)
+fil_fusionio_enable_atomic_write(os_file_t file)
 {
 	if (srv_unix_file_flush_method == SRV_UNIX_O_DIRECT) {
 
 		uint	atomic = 1;
-		ut_a(file.m_file != -1);
-		if (ioctl(file.m_file, DFS_IOCTL_ATOMIC_WRITE_SET, &atomic) != -1) {
+
+		ut_a(file != -1);
+
+		if (ioctl(file, DFS_IOCTL_ATOMIC_WRITE_SET, &atomic) != -1) {
 
 			return(true);
 		}
@@ -629,19 +616,7 @@ fil_node_create_low(
 
 	node->block_size = stat_info.block_size;
 
-	/* In this debugging mode, we can overcome the limitation of some
-	OSes like Windows that support Punch Hole but have a hole size
-	effectively too large.  By setting the block size to be half the
-	page size, we can bypass one of the checks that would normally
-	turn Page Compression off.  This execution mode allows compression
-	to be tested even when full punch hole support is not available. */
-	DBUG_EXECUTE_IF("ignore_punch_hole",
-		node->block_size = ut_min(stat_info.block_size,
-					  static_cast<size_t>(UNIV_PAGE_SIZE / 2));
-	);
-
-	if (!IORequest::is_punch_hole_supported()
-	    || !punch_hole
+	if (!(IORequest::is_punch_hole_supported() && punch_hole)
 	    || node->block_size >= srv_page_size) {
 
 		fil_no_punch_hole(node);
@@ -724,18 +699,13 @@ fil_node_open_file(
 		file read function os_file_read() in Windows to read
 		from a file opened for async I/O! */
 
-retry:
 		node->handle = os_file_create_simple_no_error_handling(
 			innodb_data_file_key, node->name, OS_FILE_OPEN,
 			OS_FILE_READ_ONLY, read_only_mode, &success);
 
 		if (!success) {
 			/* The following call prints an error message */
-			ulint err = os_file_get_last_error(true);
-			if (err == EMFILE + 100) {
-				if (fil_try_to_close_file_in_LRU(true))
-					goto retry;
-                       }
+			os_file_get_last_error(true);
 
 			ib::warn() << "Cannot open '" << node->name << "'."
 				" Have you deleted .ibd files under a"
@@ -840,7 +810,9 @@ retry:
 		encrytion key and iv(initial vector) is readed. */
 		if (FSP_FLAGS_GET_ENCRYPTION(flags)
 		    && !recv_recovery_is_on()) {
-			if (space->encryption_type != Encryption::AES) {
+			if (space->encryption_key == NULL
+			    || space->encryption_iv == NULL
+			    || space->encryption_type != Encryption::AES) {
 				ib::error()
 					<< "Can't read encryption"
 					<< " key from file "
@@ -948,20 +920,20 @@ fil_node_close_file(
 	}
 }
 
-/** Tries to close a file in the LRU list. The caller must hold the fil_sys
+/********************************************************************//**
+Tries to close a file in the LRU list. The caller must hold the fil_sys
 mutex.
 @return true if success, false if should retry later; since i/o's
 generally complete in < 100 ms, and as InnoDB writes at most 128 pages
 from the buffer pool in a batch, and then immediately flushes the
 files, there is a good chance that the next time we find a suitable
-node from the LRU list.
-@param[in] print_info	if true, prints information why it
-			cannot close a file*/
+node from the LRU list */
 static
 bool
 fil_try_to_close_file_in_LRU(
-
-	bool	print_info)
+/*=========================*/
+	bool	print_info)	/*!< in: if true, prints information why it
+				cannot close a file */
 {
 	fil_node_t*	node;
 
@@ -2972,42 +2944,20 @@ fil_prepare_for_truncate(
 	return(err);
 }
 
-/** Reinitialize the original tablespace header with the same space id
-for single tablespace
-@param[in]      table		table belongs to tablespace
-@param[in]      size            size in blocks
-@param[in]      trx             Transaction covering truncate */
+/**********************************************************************//**
+Reinitialize the original tablespace header with the same space id
+for single tablespace */
 void
-fil_reinit_space_header_for_table(
-	dict_table_t*	table,
-	ulint		size,
-	trx_t*		trx)
+fil_reinit_space_header(
+/*====================*/
+	ulint		id,	/*!< in: space id */
+	ulint		size)	/*!< in: size in blocks */
 {
-	ulint	id = table->space;
-
 	ut_a(!is_system_tablespace(id));
 
 	/* Invalidate in the buffer pool all pages belonging
-	to the tablespace. The buffer pool scan may take long
-	time to complete, therefore we release dict_sys->mutex
-	and the dict operation lock during the scan and aquire
-	it again after the buffer pool scan.*/
-
-	/* Release the lock on the indexes too. So that
-	they won't violate the latch ordering. */
-	dict_table_x_unlock_indexes(table);
-	row_mysql_unlock_data_dictionary(trx);
-
-	/* Lock the search latch in shared mode to prevent user
-	from disabling AHI during the scan */
-	btr_search_s_lock_all();
-	DEBUG_SYNC_C("simulate_buffer_pool_scan");
+	to the tablespace */
 	buf_LRU_flush_or_remove_pages(id, BUF_REMOVE_ALL_NO_WRITE, 0);
-	btr_search_s_unlock_all();
-
-	row_mysql_lock_data_dictionary(trx);
-
-	dict_table_x_lock_indexes(table);
 
 	/* Remove all insert buffer entries for the tablespace */
 	ibuf_delete_for_discarded_space(id);
@@ -3504,7 +3454,7 @@ fil_ibd_create(
 	ulint		flags,
 	ulint		size)
 {
-	pfs_os_file_t	file;
+	os_file_t	file;
 	dberr_t		err;
 	byte*		buf2;
 	byte*		page;
@@ -3573,7 +3523,7 @@ fil_ibd_create(
 	if (fil_fusionio_enable_atomic_write(file)) {
 
 		/* This is required by FusionIO HW/Firmware */
-		int     ret = posix_fallocate(file.m_file, 0, size * UNIV_PAGE_SIZE);
+		int	ret = posix_fallocate(file, 0, size * UNIV_PAGE_SIZE);
 
 		if (ret != 0) {
 
@@ -3625,7 +3575,9 @@ fil_ibd_create(
 	if (punch_hole) {
 
 		dberr_t	punch_err;
-		punch_err = os_file_punch_hole(file.m_file, 0, size * UNIV_PAGE_SIZE);
+
+		punch_err = os_file_punch_hole(file, 0, size * UNIV_PAGE_SIZE);
+
 		if (punch_err != DB_SUCCESS) {
 			punch_hole = false;
 		}
@@ -3734,8 +3686,6 @@ fil_ibd_create(
 #endif /* !UNIV_HOTBACKUP */
 	space = fil_space_create(name, space_id, flags, is_temp
 				 ? FIL_TYPE_TEMPORARY : FIL_TYPE_TABLESPACE);
-
-	DEBUG_SYNC_C("fil_ibd_created_space");
 
 	if (!fil_node_create_low(
 			path, size, space, false, punch_hole, atomic_write)) {
@@ -4943,7 +4893,7 @@ fil_write_zeros(
 			request, node->name, node->handle, buf, offset,
 			n_bytes);
 #else
-		err = os_aio_func(
+		err = os_aio(
 			request, OS_AIO_SYNC, node->name,
 			node->handle, buf, offset, n_bytes, read_only_mode,
 			NULL, NULL);
@@ -5069,7 +5019,9 @@ retry:
 		ut_ad(len > 0);
 
 #if !defined(NO_FALLOCATE) && defined(UNIV_LINUX)
-		int     ret = posix_fallocate(node->handle.m_file, node_start, len);
+		/* This is required by FusionIO HW/Firmware */
+		int	ret = posix_fallocate(node->handle, node_start, len);
+
 		/* We already pass the valid offset and len in, if EINVAL
 		is returned, it could only mean that the file system doesn't
 		support fallocate(), currently one known case is
@@ -5889,7 +5841,7 @@ fil_flush(
 				log files or a tablespace of the database) */
 {
 	fil_node_t*	node;
-	pfs_os_file_t	file;
+	os_file_t	file;
 
 	mutex_enter(&fil_system->mutex);
 
@@ -6276,7 +6228,7 @@ fil_buf_block_init(
 }
 
 struct fil_iterator_t {
-	pfs_os_file_t	file;			/*!< File handle */
+	os_file_t	file;			/*!< File handle */
 	const char*	filepath;		/*!< File path name */
 	os_offset_t	start;			/*!< From where to start */
 	os_offset_t	end;			/*!< Where to stop */
@@ -6457,7 +6409,7 @@ fil_tablespace_iterate(
 	PageCallback&	callback)
 {
 	dberr_t		err;
-	pfs_os_file_t	file;
+	os_file_t	file;
 	char*		filepath;
 	bool		success;
 
@@ -6748,12 +6700,9 @@ fil_node_next(
 			space->n_pending_ops--;
 			space = UT_LIST_GET_NEXT(space_list, space);
 
-			/* Skip spaces that are being
-			created by fil_ibd_create(),
-			or dropped or truncated. */
+			/* Skip spaces that are being dropped or truncated. */
 			while (space != NULL
-			       && (UT_LIST_GET_LEN(space->chain) == 0
-				   || space->stop_new_ops
+			       && (space->stop_new_ops
 				   || space->is_being_truncated)) {
 				space = UT_LIST_GET_NEXT(space_list, space);
 			}
@@ -6971,12 +6920,6 @@ fil_names_clear(
 	bool	do_write)
 {
 	mtr_t	mtr;
-	ulint	mtr_checkpoint_size = LOG_CHECKPOINT_FREE_PER_THREAD;
-
-	DBUG_EXECUTE_IF(
-		"increase_mtr_checkpoint_size",
-		mtr_checkpoint_size = 75 * 1024;
-		);
 
 	ut_ad(log_mutex_own());
 
@@ -7010,24 +6953,11 @@ fil_names_clear(
 		fil_names_write(space, &mtr);
 		do_write = true;
 
-		const mtr_buf_t* mtr_log = mtr_get_log(&mtr);
-
-		/** If the mtr buffer size exceeds the size of
-		LOG_CHECKPOINT_FREE_PER_THREAD then commit the multi record
-		mini-transaction, start the new mini-transaction to
-		avoid the parsing buffer overflow error during recovery. */
-
-		if (mtr_log->size() > mtr_checkpoint_size) {
-			ut_ad(mtr_log->size() < (RECV_PARSING_BUF_SIZE / 2));
-			mtr.commit_checkpoint(lsn, false);
-			mtr.start();
-		}
-
 		space = next;
 	}
 
 	if (do_write) {
-		mtr.commit_checkpoint(lsn, true);
+		mtr.commit_checkpoint(lsn);
 	} else {
 		ut_ad(!mtr.has_modifications());
 	}
@@ -7160,26 +7090,18 @@ fil_no_punch_hole(fil_node_t* node)
 	node->punch_hole = false;
 }
 
-/** Set the compression type for the tablespace of a table
-@param[in]	table		The table that should be compressed
-@param[in]	algorithm	Text representation of the algorithm
+/** Set the compression type for the tablespace
+@param[in] space		Space ID of tablespace for which to set
+@param[in] algorithm		Text representation of the algorithm
 @return DB_SUCCESS or error code */
 dberr_t
 fil_set_compression(
-	dict_table_t*	table,
+	ulint		space_id,
 	const char*	algorithm)
 {
-	ut_ad(table != NULL);
+	ut_ad(!is_system_or_undo_tablespace(space_id));
 
-	/* We don't support Page Compression for the system tablespace,
-	the temporary tablespace, or any general tablespace because
-	COMPRESSION is set by TABLE DDL, not TABLESPACE DDL. There is
-	no other technical reason.  Also, do not use it for missing
-	tables or tables with compressed row_format. */
-	if (table->ibd_file_missing
-	    || !DICT_TF2_FLAG_IS_SET(table, DICT_TF2_USE_FILE_PER_TABLE)
-	    || DICT_TF2_FLAG_IS_SET(table, DICT_TF2_TEMPORARY)
-	    || page_size_t(table->flags).is_compressed()) {
+	if (is_shared_tablespace(space_id)) {
 
 		return(DB_IO_NO_PUNCH_HOLE_TABLESPACE);
 	}
@@ -7192,20 +7114,17 @@ fil_set_compression(
 #ifndef UNIV_DEBUG
 		compression.m_type = Compression::NONE;
 #else
-		/* This is a Debug tool for setting compression on all
-		compressible tables not otherwise specified. */
-		switch (srv_debug_compress) {
-		case Compression::LZ4:
-		case Compression::ZLIB:
-		case Compression::NONE:
+		compression.m_type = static_cast<Compression::Type>(
+			srv_debug_compress);
 
-			compression.m_type =
-				static_cast<Compression::Type>(
-					srv_debug_compress);
+		switch (compression.m_type) {
+		case Compression::LZ4:
+		case Compression::NONE:
+		case Compression::ZLIB:
 			break;
 
 		default:
-			compression.m_type = Compression::NONE;
+			ut_error;
 		}
 
 #endif /* UNIV_DEBUG */
@@ -7215,25 +7134,31 @@ fil_set_compression(
 	} else {
 
 		err = Compression::check(algorithm, &compression);
+
+		ut_ad(err == DB_SUCCESS || err == DB_UNSUPPORTED);
 	}
 
-	fil_space_t*	space = fil_space_get(table->space);
+	fil_space_t*	space = fil_space_get(space_id);
 
 	if (space == NULL) {
-		return(DB_NOT_FOUND);
-	}
 
-	space->compression_type = compression.m_type;
+		err = DB_NOT_FOUND;
 
-	if (space->compression_type != Compression::NONE) {
+	} else {
 
-		const fil_node_t* node;
+		space->compression_type = compression.m_type;
 
-		node = UT_LIST_GET_FIRST(space->chain);
+		if (space->compression_type != Compression::NONE
+		    && err == DB_SUCCESS) {
 
-		if (!node->punch_hole) {
+			const fil_node_t* node;
 
-			return(DB_IO_NO_PUNCH_HOLE_FS);
+			node = UT_LIST_GET_FIRST(space->chain);
+
+			if (!node->punch_hole) {
+
+				return(DB_IO_NO_PUNCH_HOLE_FS);
+			}
 		}
 	}
 
@@ -7267,7 +7192,7 @@ fil_set_encryption(
 {
 	ut_ad(!is_system_or_undo_tablespace(space_id));
 
-	if (is_system_tablespace(space_id)) {
+	if (is_shared_tablespace(space_id)) {
 		return(DB_IO_NO_ENCRYPT_TABLESPACE);
 	}
 
@@ -7309,7 +7234,7 @@ fil_encryption_rotate()
 {
 	fil_space_t*	space;
 	mtr_t		mtr;
-	byte		encrypt_info[ENCRYPTION_INFO_SIZE_V2];
+	byte		encrypt_info[ENCRYPTION_INFO_SIZE];
 
 	for (space = UT_LIST_GET_FIRST(fil_system->space_list);
 	     space != NULL; ) {
@@ -7327,7 +7252,7 @@ fil_encryption_rotate()
 
 			space = mtr_x_lock_space(space->id, &mtr);
 
-			memset(encrypt_info, 0, ENCRYPTION_INFO_SIZE_V2);
+			memset(encrypt_info, 0, ENCRYPTION_INFO_SIZE);
 
 			if (!fsp_header_rotate_encryption(space,
 							  encrypt_info,

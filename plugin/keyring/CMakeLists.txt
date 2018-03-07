@@ -1,4 +1,4 @@
-# Copyright (c) 2016, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -13,26 +13,14 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
-INCLUDE(${MYSQL_CMAKE_SCRIPT_DIR}/compile_flags.cmake)
-
 INCLUDE_DIRECTORIES(${BOOST_PATCHES_DIR} ${BOOST_INCLUDE_DIR})
-INCLUDE_DIRECTORIES(${CMAKE_CURRENT_SOURCE_DIR}/common)
-
-SET(
-    KEYRING_FILE_SOURCES
-    common/keyring_key.cc
-    common/keys_container.cc
-    common/keys_iterator.cc
-    common/keyring_impl.cc
-    keyring.cc
-    hash_to_buffer_serializer.cc
-    buffered_file_io.cc
-    file_io.cc
-    buffer.cc
-)
 
 MYSQL_ADD_PLUGIN(keyring_file
-                 ${KEYRING_FILE_SOURCES}
+                 keyring_key.cc
+                 keyring.cc
+                 keys_container.cc
+                 buffered_file_io.cc
+                 keyring_impl.cc
                  MODULE_ONLY
                  MODULE_OUTPUT_NAME "keyring_file")
 
@@ -50,9 +38,8 @@ IF(HAVE_DLOPEN)
       PROPERTIES LINK_FLAGS "${CMAKE_SHARED_LIBRARY_C_FLAGS}")
 ENDIF()
 
-# Boost source has unused local typedefs.
-MY_CHECK_CXX_COMPILER_FLAG("-Wunused-local-typedefs" HAVE_UNUSED_TYPEDEFS)
-IF(HAVE_UNUSED_TYPEDEFS)
-  ADD_COMPILE_FLAGS(${KEYRING_FILE_SOURCES}
-    COMPILE_FLAGS "-Wno-unused-local-typedefs")
+IF(WIN32)
+  SET(KEYRING_PLUGIN_INFO keyring_file=keyring_file.dll CACHE INTERNAL "")
+ELSE()
+  SET(KEYRING_PLUGIN_INFO keyring_file=keyring_file.so CACHE INTERNAL "")
 ENDIF()

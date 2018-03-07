@@ -1,4 +1,4 @@
-/* Copyright (c) 2008, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -52,7 +52,6 @@
 
 struct PFS_global_param;
 struct PFS_table_share;
-class PFS_opaque_container_page;
 
 /**
   @addtogroup Performance_schema_buffers
@@ -136,8 +135,6 @@ struct PFS_instr_class
   bool m_timed;
   /** Instrument flags. */
   int m_flags;
-  /** Volatility index. */
-  int m_volatility;
   /**
     Instrument name index.
     Self index in:
@@ -275,8 +272,6 @@ struct PFS_table_share_index
   PFS_table_io_stat m_stat;
   /** Owner table share. To be used later. */
   PFS_table_share* m_owner;
-  /** Container page. */
-  PFS_opaque_container_page *m_page;
 };
 
 /** Lock statistics of a table.*/
@@ -287,8 +282,6 @@ struct PFS_table_share_lock
   PFS_table_lock_stat m_stat;
   /** Owner table share. To be used later. */
   PFS_table_share* m_owner;
-  /** Container page. */
-  PFS_opaque_container_page *m_page;
 };
 
 /** Instrumentation metadata for a table share. */
@@ -363,8 +356,6 @@ public:
   uint m_table_name_length;
   /** Number of indexes. */
   uint m_key_count;
-  /** Container page. */
-  PFS_opaque_container_page *m_page;
 
   PFS_table_share_lock *find_lock_stat() const;
   PFS_table_share_lock *find_or_create_lock_stat();

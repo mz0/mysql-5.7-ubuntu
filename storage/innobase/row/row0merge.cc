@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2005, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2005, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -272,7 +272,7 @@ or NULL if fd, block will be used instead
 ALTER TABLE. If not NULL stage->begin_phase_insert() will be called initially
 and then stage->inc() will be called for each record that is processed.
 @return DB_SUCCESS or error number */
-static	MY_ATTRIBUTE((warn_unused_result))
+static	__attribute__((warn_unused_result))
 dberr_t
 row_merge_insert_index_tuples(
 	trx_id_t		trx_id,
@@ -286,7 +286,7 @@ row_merge_insert_index_tuples(
 
 /******************************************************//**
 Encode an index record. */
-static
+static __attribute__((nonnull))
 void
 row_merge_buf_encode(
 /*=================*/
@@ -323,7 +323,7 @@ row_merge_buf_encode(
 /******************************************************//**
 Allocate a sort buffer.
 @return own: sort buffer */
-static MY_ATTRIBUTE((malloc))
+static __attribute__((malloc, nonnull))
 row_merge_buf_t*
 row_merge_buf_create_low(
 /*=====================*/
@@ -587,7 +587,7 @@ row_merge_buf_add(
 				row_field = innobase_get_computed_value(
 					row, v_col, clust_index,
 					v_heap, NULL, ifield, trx->mysql_thd,
-					my_table, old_table, NULL, NULL);
+					my_table);
 
 				if (row_field == NULL) {
 					*err = DB_COMPUTE_VALUE_FAILED;
@@ -712,8 +712,7 @@ row_merge_buf_add(
 					len = dfield_get_len(field);
 				}
 			}
-		} else if (!dict_col_is_virtual(col)) {
-			/* Only non-virtual column are stored externally */
+		} else {
 			const byte*	buf = row_ext_lookup(ext, col_no,
 							     &len);
 			if (UNIV_LIKELY_NULL(buf)) {
@@ -856,7 +855,7 @@ row_merge_dup_report(
 Compare two tuples.
 @return positive, 0, negative if a is greater, equal, less, than b,
 respectively */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((warn_unused_result))
 int
 row_merge_tuple_cmp(
 /*================*/
@@ -936,7 +935,7 @@ respectively */
 
 /**********************************************************************//**
 Merge sort the tuple buffer in main memory. */
-static
+static __attribute__((nonnull(4,5)))
 void
 row_merge_tuple_sort(
 /*=================*/
@@ -1065,7 +1064,6 @@ row_merge_read(
 	row_merge_block_t*	buf)	/*!< out: data */
 {
 	os_offset_t	ofs = ((os_offset_t) offset) * srv_sort_buf_size;
-	dberr_t		err;
 
 	DBUG_ENTER("row_merge_read");
 	DBUG_PRINT("ib_merge_sort", ("fd=%d ofs=" UINT64PF, fd, ofs));
@@ -1076,10 +1074,9 @@ row_merge_read(
 	/* Merge sort pages are never compressed. */
 	request.disable_compression();
 
-	err = os_file_read_no_error_handling_int_fd(
+	dberr_t	err = os_file_read_no_error_handling(
 		request,
-		fd, buf, ofs, srv_sort_buf_size, NULL);
-
+		OS_FILE_FROM_FD(fd), buf, ofs, srv_sort_buf_size, NULL);
 #ifdef POSIX_FADV_DONTNEED
 	/* Each block is read exactly once.  Free up the file cache. */
 	posix_fadvise(fd, ofs, srv_sort_buf_size, POSIX_FADV_DONTNEED);
@@ -1105,7 +1102,6 @@ row_merge_write(
 {
 	size_t		buf_len = srv_sort_buf_size;
 	os_offset_t	ofs = buf_len * (os_offset_t) offset;
-	dberr_t		err;
 
 	DBUG_ENTER("row_merge_write");
 	DBUG_PRINT("ib_merge_sort", ("fd=%d ofs=" UINT64PF, fd, ofs));
@@ -1115,9 +1111,9 @@ row_merge_write(
 
 	request.disable_compression();
 
-	err = os_file_write_int_fd(
+	dberr_t	err = os_file_write(
 		request,
-		"(merge)", fd, buf, ofs, buf_len);
+		"(merge)", OS_FILE_FROM_FD(fd), buf, ofs, buf_len);
 
 #ifdef POSIX_FADV_DONTNEED
 	/* The block will be needed on the next merge pass,
@@ -1446,7 +1442,7 @@ row_merge_write_eof(
 @param[in,out]	tmpfd	temporary file handle
 @param[in]	path	location for creating temporary file
 @return file descriptor, or -1 on failure */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((warn_unused_result))
 int
 row_merge_tmpfile_if_needed(
 	int*		tmpfd,
@@ -1467,7 +1463,7 @@ row_merge_tmpfile_if_needed(
 @param[in]	nrec	number of records in the file
 @param[in]	path	location for creating temporary file
 @return file descriptor, or -1 on failure */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((warn_unused_result))
 int
 row_merge_file_create_if_needed(
 	merge_file_t*	file,
@@ -1637,7 +1633,7 @@ stage->inc() will be called for each page read.
 @param[in]	eval_table	mysql table used to evaluate virtual column
 				value, see innobase_get_computed_value().
 @return DB_SUCCESS or error */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((warn_unused_result))
 dberr_t
 row_merge_read_clustered_index(
 	trx_t*			trx,
@@ -1845,8 +1841,6 @@ row_merge_read_clustered_index(
 		const dtuple_t*	row;
 		row_ext_t*	ext;
 		page_cur_t*	cur	= btr_pcur_get_page_cur(&pcur);
-
-		mem_heap_empty(row_heap);
 
 		page_cur_move_to_next(cur);
 
@@ -2507,6 +2501,7 @@ write_buffers:
 			goto func_exit;
 		}
 
+		mem_heap_empty(row_heap);
 		if (v_heap) {
 			mem_heap_empty(v_heap);
 		}
@@ -2636,8 +2631,7 @@ wait_again:
 	if (max_doc_id && err == DB_SUCCESS) {
 		/* Sync fts cache for other fts indexes to keep all
 		fts indexes consistent in sync_doc_id. */
-		err = fts_sync_table(const_cast<dict_table_t*>(new_table),
-				     false, true, false);
+		err = fts_sync_table(const_cast<dict_table_t*>(new_table));
 
 		if (err == DB_SUCCESS) {
 			fts_update_next_doc_id(
@@ -2700,7 +2694,7 @@ wait_again:
 ALTER TABLE. If not NULL stage->inc() will be called for each record
 processed.
 @return DB_SUCCESS or error code */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((warn_unused_result))
 dberr_t
 row_merge_blocks(
 	const row_merge_dup_t*	dup,
@@ -2805,7 +2799,7 @@ done1:
 ALTER TABLE. If not NULL stage->inc() will be called for each record
 processed.
 @return TRUE on success, FALSE on failure */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((warn_unused_result))
 ibool
 row_merge_blocks_copy(
 	const dict_index_t*	index,
@@ -2827,9 +2821,9 @@ row_merge_blocks_copy(
 
 	DBUG_ENTER("row_merge_blocks_copy");
 	DBUG_PRINT("ib_merge_sort",
-		   ("fd=%d," ULINTPF " to fd=%d," ULINTPF,
-		    file->fd, *foffs0,
-		    of->fd, of->offset));
+		   ("fd=%d,%lu to fd=%d,%lu",
+		    file->fd, ulong(foffs0),
+		    of->fd, ulong(of->offset)));
 
 	heap = row_merge_heap_create(index, &buf, &offsets0, &offsets1);
 
@@ -3169,7 +3163,7 @@ or NULL if fd, block will be used instead
 ALTER TABLE. If not NULL stage->begin_phase_insert() will be called initially
 and then stage->inc() will be called for each record that is processed.
 @return DB_SUCCESS or error number */
-static	MY_ATTRIBUTE((warn_unused_result))
+static	__attribute__((warn_unused_result))
 dberr_t
 row_merge_insert_index_tuples(
 	trx_id_t		trx_id,
@@ -3737,21 +3731,14 @@ row_merge_file_create_low(
 	performance schema */
 	struct PSI_file_locker*	locker = NULL;
 	PSI_file_locker_state	state;
-	locker = PSI_FILE_CALL(get_thread_file_name_locker)(
-				&state, innodb_temp_file_key.m_value, PSI_FILE_OPEN,
-				"Innodb Merge Temp File", &locker);
-	if (locker != NULL) {
-		PSI_FILE_CALL(start_file_open_wait)(locker,
-						__FILE__,
-						__LINE__);
-	}
+	register_pfs_file_open_begin(&state, locker, innodb_temp_file_key,
+				     PSI_FILE_OPEN,
+				     "Innodb Merge Temp File",
+				     __FILE__, __LINE__);
 #endif
 	fd = innobase_mysql_tmpfile(path);
 #ifdef UNIV_PFS_IO
-	 if (locker != NULL) {
-		PSI_FILE_CALL(end_file_open_wait_and_bind_to_descriptor)(
-				locker, fd);
-		}
+	register_pfs_file_open_end(locker, fd);
 #endif
 
 	if (fd < 0) {
@@ -3795,20 +3782,15 @@ row_merge_file_destroy_low(
 #ifdef UNIV_PFS_IO
 	struct PSI_file_locker*	locker = NULL;
 	PSI_file_locker_state	state;
-	locker = PSI_FILE_CALL(get_thread_file_descriptor_locker)(
-			       &state, fd, PSI_FILE_CLOSE);
-	if (locker != NULL) {
-		PSI_FILE_CALL(start_file_wait)(
-			      locker, 0, __FILE__, __LINE__);
-	}
+	register_pfs_file_io_begin(&state, locker,
+				   fd, 0, PSI_FILE_CLOSE,
+				   __FILE__, __LINE__);
 #endif
 	if (fd >= 0) {
 		close(fd);
 	}
 #ifdef UNIV_PFS_IO
-	if (locker != NULL) {
-		PSI_FILE_CALL(end_file_wait)(locker, 0);
-	}
+	register_pfs_file_io_end(locker, 0);
 #endif
 }
 /*********************************************************************//**
@@ -4079,7 +4061,7 @@ row_merge_rename_tables_dict(
 @param[in,out]	index	index
 @param[in]	add_v	new virtual columns added along with add index call
 @return DB_SUCCESS or error code */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 dberr_t
 row_merge_create_index_graph(
 	trx_t*			trx,
@@ -4167,10 +4149,30 @@ row_merge_create_index(
 			} else {
 				name = dict_table_get_v_col_name(
 					table, ifield->col_no);
+
+				if (dict_table_has_base_in_foreign(
+					    table, ifield->col_no)) {
+					my_error(ER_CANNOT_CREATE_VIRTUAL_INDEX_CONSTRAINT,
+						 MYF(0));
+					trx->error_state = DB_NO_VIRTUAL_INDEX_ON_FK;
+					dict_mem_index_free(index);
+					DBUG_RETURN(NULL);
+				}
 			}
 		} else {
 			name = dict_table_get_col_name(table, ifield->col_no);
 
+			/* If this is a virtual index, we need to block
+			any non-virtual column (in this virtual index) that is
+			also part of some foreign constraint */
+			if ((index_def->ind_type & DICT_VIRTUAL)
+			    && dict_foreigns_has_this_col(table, name)) {
+				my_error(ER_CANNOT_CREATE_VIRTUAL_INDEX_CONSTRAINT,
+					 MYF(0));
+				trx->error_state = DB_NO_VIRTUAL_INDEX_ON_FK;
+				dict_mem_index_free(index);
+				DBUG_RETURN(NULL);
+			}
 		}
 
 		dict_mem_index_add_field(index, name, ifield->prefix_len);
@@ -4502,13 +4504,6 @@ wait_again:
 						" threads exited when creating"
 						" FTS index '"
 						<< indexes[i]->name << "'";
-				} else {
-					for (j = 0; j < FTS_NUM_AUX_INDEX;
-					     j++) {
-
-						os_thread_join(merge_info[j]
-							       .thread_hdl);
-					}
 				}
 			} else {
 				/* This cannot report duplicates; an

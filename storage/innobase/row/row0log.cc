@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2011, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2011, 2015, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -209,7 +209,7 @@ struct row_log_t {
 /** Create the file or online log if it does not exist.
 @param[in,out] log     online rebuild log
 @return true if success, false if not */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((warn_unused_result))
 int
 row_log_tmpfile(
 	row_log_t*	log)
@@ -232,7 +232,7 @@ row_log_tmpfile(
 /** Allocate the memory for the log buffer.
 @param[in,out]	log_buf	Buffer used for log operation
 @return TRUE if success, false if not */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((warn_unused_result))
 bool
 row_log_block_allocate(
 	row_log_buf_t&	log_buf)
@@ -380,12 +380,11 @@ row_log_online_op(
 			goto err_exit;
 		}
 
-		err = os_file_write_int_fd(
+		err = os_file_write(
 			request,
 			"(modification log)",
-			log->fd,
+			OS_FILE_FROM_FD(log->fd),
 			log->tail.block, byte_offset, srv_sort_buf_size);
-
 		log->tail.blocks++;
 		if (err != DB_SUCCESS) {
 write_failed:
@@ -425,7 +424,7 @@ row_log_table_get_error(
 /******************************************************//**
 Starts logging an operation to a table that is being rebuilt.
 @return pointer to log, or NULL if no logging is necessary */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 byte*
 row_log_table_open(
 /*===============*/
@@ -460,7 +459,7 @@ err_exit:
 
 /******************************************************//**
 Stops logging an operation to a table that is being rebuilt. */
-static MY_ATTRIBUTE((nonnull))
+static __attribute__((nonnull))
 void
 row_log_table_close_func(
 /*=====================*/
@@ -499,12 +498,11 @@ row_log_table_close_func(
 			goto err_exit;
 		}
 
-		err = os_file_write_int_fd(
+		err = os_file_write(
 			request,
 			"(modification log)",
-			log->fd,
+			OS_FILE_FROM_FD(log->fd),
 			log->tail.block, byte_offset, srv_sort_buf_size);
-
 		log->tail.blocks++;
 		if (err != DB_SUCCESS) {
 write_failed:
@@ -531,20 +529,6 @@ err_exit:
 # define row_log_table_close(log, b, size, avail)	\
 	row_log_table_close_func(log, size, avail)
 #endif /* UNIV_DEBUG */
-
-/** Check whether a virtual column is indexed in the new table being
-created during alter table
-@param[in]	index	cluster index
-@param[in]	v_no	virtual column number
-@return true if it is indexed, else false */
-bool
-row_log_col_is_indexed(
-	const dict_index_t*	index,
-	ulint			v_no)
-{
-	return(dict_table_get_nth_v_col(
-		index->online_log->table, v_no)->m_col.ord_part);
-}
 
 /******************************************************//**
 Logs a delete operation to a table that is being rebuilt.
@@ -648,7 +632,7 @@ row_log_table_delete(
 		&old_pk_extra_size);
 	ut_ad(old_pk_extra_size < 0x100);
 
-	mrec_size = 6 + old_pk_size;
+	mrec_size = 4 + old_pk_size;
 
 	/* Log enough prefix of the BLOB unless both the
 	old and new table are in COMPACT or REDUNDANT format,
@@ -676,7 +660,7 @@ row_log_table_delete(
 	if (ventry->n_v_fields > 0) {
 		ulint	v_extra;
 		mrec_size += rec_get_converted_size_temp(
-                        new_index, NULL, 0, ventry, &v_extra);
+                        index, NULL, 0, ventry, &v_extra);
         }
 
 	if (byte* b = row_log_table_open(index->online_log,
@@ -685,8 +669,8 @@ row_log_table_delete(
 		*b++ = static_cast<byte>(old_pk_extra_size);
 
 		/* Log the size of external prefix we saved */
-		mach_write_to_4(b, ext_size);
-		b += 4;
+		mach_write_to_2(b, ext_size);
+		b += 2;
 
 		rec_convert_dtuple_to_temp(
 			b + old_pk_extra_size, new_index,
@@ -819,9 +803,12 @@ row_log_table_low_redundant(
 
 	mrec_size = ROW_LOG_HEADER_SIZE + size + (extra_size >= 0x80);
 
-	if (num_v) {
+	if (ventry && ventry->n_v_fields > 0) {
+		ulint	v_extra = 0;
+		mrec_size += rec_get_converted_size_temp(
+			index, NULL, 0, ventry, &v_extra);
+
 		if (o_ventry) {
-			ulint	v_extra = 0;
 			mrec_size += rec_get_converted_size_temp(
 				index, NULL, 0, o_ventry, &v_extra);
 		}
@@ -874,7 +861,11 @@ row_log_table_low_redundant(
 			ventry);
 		b += size;
 
-		if (num_v) {
+		if (ventry && ventry->n_v_fields > 0) {
+			rec_convert_dtuple_to_temp(
+				b, new_index, NULL, 0, ventry);
+			b += mach_read_from_2(b);
+
 			if (o_ventry) {
 				rec_convert_dtuple_to_temp(
 					b, new_index, NULL, 0, o_ventry);
@@ -935,13 +926,6 @@ row_log_table_low(
 	ut_ad(fil_page_get_type(page_align(rec)) == FIL_PAGE_INDEX);
 	ut_ad(page_is_leaf(page_align(rec)));
 	ut_ad(!page_is_comp(page_align(rec)) == !rec_offs_comp(offsets));
-	/* old_pk=row_log_table_get_pk() [not needed in INSERT] is a prefix
-	of the clustered index record (PRIMARY KEY,DB_TRX_ID,DB_ROLL_PTR),
-	with no information on virtual columns */
-	ut_ad(!old_pk || !insert);
-	ut_ad(!old_pk || old_pk->n_v_fields == 0);
-	ut_ad(!o_ventry || !insert);
-	ut_ad(!o_ventry || ventry);
 
 	if (dict_index_is_corrupted(index)
 	    || !dict_index_is_online_ddl(index)
@@ -969,11 +953,11 @@ row_log_table_low(
 	if (ventry && ventry->n_v_fields > 0) {
 		ulint	v_extra = 0;
 		mrec_size += rec_get_converted_size_temp(
-			new_index, NULL, 0, ventry, &v_extra);
+			index, NULL, 0, ventry, &v_extra);
 
 		if (o_ventry) {
 			mrec_size += rec_get_converted_size_temp(
-				new_index, NULL, 0, o_ventry, &v_extra);
+				index, NULL, 0, o_ventry, &v_extra);
 		}
 	} else if (index->table->n_v_cols) {
 		/* Always leave 2 bytes length marker for virtual column
@@ -995,7 +979,7 @@ row_log_table_low(
 
 		old_pk_size = rec_get_converted_size_temp(
 			new_index, old_pk->fields, old_pk->n_fields,
-			NULL, &old_pk_extra_size);
+			old_pk, &old_pk_extra_size);
 		ut_ad(old_pk_extra_size < 0x100);
 		mrec_size += 1/*old_pk_extra_size*/ + old_pk_size;
 	}
@@ -1447,7 +1431,7 @@ row_log_table_blob_alloc(
 /******************************************************//**
 Converts a log record to a table row.
 @return converted row, or NULL if the conversion fails */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 const dtuple_t*
 row_log_table_apply_convert_mrec(
 /*=============================*/
@@ -1613,7 +1597,7 @@ blob_done:
 /******************************************************//**
 Replays an insert operation on a table that was rebuilt.
 @return DB_SUCCESS or error code */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 dberr_t
 row_log_table_apply_insert_low(
 /*===========================*/
@@ -1691,7 +1675,7 @@ row_log_table_apply_insert_low(
 /******************************************************//**
 Replays an insert operation on a table that was rebuilt.
 @return DB_SUCCESS or error code */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 dberr_t
 row_log_table_apply_insert(
 /*=======================*/
@@ -1743,7 +1727,7 @@ row_log_table_apply_insert(
 /******************************************************//**
 Deletes a record from a table that is being rebuilt.
 @return DB_SUCCESS or error code */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((warn_unused_result))
 dberr_t
 row_log_table_apply_delete_low(
 /*===========================*/
@@ -1847,7 +1831,7 @@ flag_ok:
 /******************************************************//**
 Replays a delete operation on a table that was rebuilt.
 @return DB_SUCCESS or error code */
-static MY_ATTRIBUTE((nonnull(1, 3, 4, 5, 6, 7), warn_unused_result))
+static __attribute__((nonnull(1, 3, 4, 5, 6, 7), warn_unused_result))
 dberr_t
 row_log_table_apply_delete(
 /*=======================*/
@@ -1985,7 +1969,7 @@ all_done:
 /******************************************************//**
 Replays an update operation on a table that was rebuilt.
 @return DB_SUCCESS or error code */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 dberr_t
 row_log_table_apply_update(
 /*=======================*/
@@ -2037,7 +2021,6 @@ row_log_table_apply_update(
 
 		When applying the subsequent ROW_T_DELETE, no matching
 		record will be found. */
-		/* Fall through. */
 	case DB_SUCCESS:
 		ut_ad(row != NULL);
 		break;
@@ -2195,9 +2178,8 @@ func_exit_committed:
 		goto func_exit_committed;
 	}
 
-	/** It allows to create tuple with virtual column information. */
-	dtuple_t*	entry	= row_build_index_entry_low(
-		row, NULL, index, heap, ROW_BUILD_FOR_INSERT);
+	dtuple_t*	entry	= row_build_index_entry(
+		row, NULL, index, heap);
 	upd_t*		update	= row_upd_build_difference_binary(
 		index, entry, btr_pcur_get_rec(&pcur), cur_offsets,
 		false, NULL, heap, dup->table);
@@ -2352,7 +2334,7 @@ func_exit_committed:
 Applies an operation to a table that was rebuilt.
 @return NULL on failure (mrec corruption) or when out of data;
 pointer to next record on success */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 const mrec_t*
 row_log_table_apply_op(
 /*===================*/
@@ -2421,9 +2403,6 @@ row_log_table_apply_op(
 		next_mrec = mrec + rec_offs_data_size(offsets);
 
 		if (log->table->n_v_cols) {
-			if (next_mrec + 2 > mrec_end) {
-				return(NULL);
-			}
 			next_mrec += mach_read_from_2(next_mrec);
 		}
 
@@ -2444,14 +2423,14 @@ row_log_table_apply_op(
 		break;
 
 	case ROW_T_DELETE:
-		/* 1 (extra_size) + 4 (ext_size) + at least 1 (payload) */
-		if (mrec + 6 >= mrec_end) {
+		/* 1 (extra_size) + 2 (ext_size) + at least 1 (payload) */
+		if (mrec + 4 >= mrec_end) {
 			return(NULL);
 		}
 
 		extra_size = *mrec++;
-		ext_size = mach_read_from_4(mrec);
-		mrec += 4;
+		ext_size = mach_read_from_2(mrec);
+		mrec += 2;
 		ut_ad(mrec < mrec_end);
 
 		/* We assume extra_size < 0x100 for the PRIMARY KEY prefix.
@@ -2462,10 +2441,6 @@ row_log_table_apply_op(
 		rec_init_offsets_temp(mrec, new_index, offsets);
 		next_mrec = mrec + rec_offs_data_size(offsets) + ext_size;
 		if (log->table->n_v_cols) {
-			if (next_mrec + 2 > mrec_end) {
-				return(NULL);
-			}
-
 			next_mrec += mach_read_from_2(next_mrec);
 		}
 
@@ -2754,7 +2729,7 @@ row_log_progress_inc_per_block()
 ALTER TABLE. If not NULL, then stage->inc() will be called for each block
 of log that is applied.
 @return DB_SUCCESS, or error code on failure */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((warn_unused_result))
 dberr_t
 row_log_table_apply_ops(
 	que_thr_t*		thr,
@@ -2783,7 +2758,6 @@ row_log_table_apply_ops(
 	const ulint	new_trx_id_col	= dict_col_get_clust_pos(
 		dict_table_get_sys_col(new_table, DATA_TRX_ID), new_index);
 	trx_t*		trx		= thr_get_trx(thr);
-	dberr_t		err;
 
 	ut_ad(dict_index_is_clust(index));
 	ut_ad(dict_index_is_online_ddl(index));
@@ -2888,9 +2862,9 @@ all_done:
 
 		IORequest	request;
 
-		err = os_file_read_no_error_handling_int_fd(
+		dberr_t	err = os_file_read_no_error_handling(
 			request,
-			index->online_log->fd,
+			OS_FILE_FROM_FD(index->online_log->fd),
 			index->online_log->head.block, ofs,
 			srv_sort_buf_size,
 			NULL);
@@ -3252,7 +3226,7 @@ row_log_get_max_trx(
 
 /******************************************************//**
 Applies an operation to a secondary index that was being created. */
-static MY_ATTRIBUTE((nonnull))
+static __attribute__((nonnull))
 void
 row_log_apply_op_low(
 /*=================*/
@@ -3489,7 +3463,7 @@ func_exit:
 Applies an operation to a secondary index that was being created.
 @return NULL on failure (mrec corruption) or when out of data;
 pointer to next record on success */
-static MY_ATTRIBUTE((nonnull, warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 const mrec_t*
 row_log_apply_op(
 /*=============*/
@@ -3718,9 +3692,10 @@ all_done:
 		}
 
 		IORequest	request;
-		dberr_t	err = os_file_read_no_error_handling_int_fd(
+
+		dberr_t	err = os_file_read_no_error_handling(
 			request,
-				index->online_log->fd,
+			OS_FILE_FROM_FD(index->online_log->fd),
 			index->online_log->head.block, ofs,
 			srv_sort_buf_size,
 			NULL);

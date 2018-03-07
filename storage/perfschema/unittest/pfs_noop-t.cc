@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2015, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -52,8 +52,6 @@ void test_noop()
   PSI_memory_key memory_key;
   PSI_metadata_lock *metadata_lock;
   PSI_metadata_locker *metadata_locker;
-  PSI_thread *owner;
-
   diag("test_noop");
 
   PSI_server->register_mutex(NULL, NULL, 0);
@@ -144,7 +142,6 @@ void test_noop()
   PSI_server->end_file_wait(NULL, 0);
   PSI_server->start_file_close_wait(NULL, NULL, 0);
   PSI_server->end_file_close_wait(NULL, 0);
-  PSI_server->end_file_rename_wait(NULL, NULL, NULL, 0);
   PSI_server->start_stage(1, NULL, 0);
 
   PSI_stage_progress *progress;
@@ -192,9 +189,9 @@ void test_noop()
   ok(sp_share == NULL, "no sp_share");
   PSI_server->release_sp_share(NULL);
   PSI_server->register_memory(NULL, NULL, 0);
-  memory_key= PSI_server->memory_alloc(0, 0, & owner);
+  memory_key= PSI_server->memory_alloc(0, 0, NULL);
   ok(memory_key == PSI_NOT_INSTRUMENTED, "no memory_key");
-  memory_key= PSI_server->memory_realloc(0, 0, 0, & owner);
+  memory_key= PSI_server->memory_realloc(0, 0, 0, NULL);
   ok(memory_key == PSI_NOT_INSTRUMENTED, "no memory_key");
   PSI_server->memory_free(0, 0, NULL);
   PSI_server->unlock_table(NULL);
@@ -230,6 +227,6 @@ int main(int, char **)
 
   MY_INIT("pfs_noop-t");
   test_noop();
-  return (exit_status());
+  return 0;
 }
 

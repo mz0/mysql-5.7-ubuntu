@@ -1,4 +1,4 @@
-/* Copyright (c) 2004, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -1212,7 +1212,7 @@ typedef struct st_thd_ndb_share {
 } THD_NDB_SHARE;
 static
 uchar *thd_ndb_share_get_key(THD_NDB_SHARE *thd_ndb_share, size_t *length,
-                            my_bool not_used MY_ATTRIBUTE((unused)))
+                            my_bool not_used __attribute__((unused)))
 {
   *length= sizeof(thd_ndb_share->key);
   return (uchar*) &thd_ndb_share->key;
@@ -1517,7 +1517,6 @@ static bool field_type_forces_var_part(enum_field_types type)
   case MYSQL_TYPE_BLOB:
   case MYSQL_TYPE_MEDIUM_BLOB:
   case MYSQL_TYPE_LONG_BLOB:
-  case MYSQL_TYPE_JSON:
   case MYSQL_TYPE_GEOMETRY:
     return FALSE;
   default:
@@ -1968,7 +1967,6 @@ type_supports_default_value(enum_field_types mysql_type)
               mysql_type != MYSQL_TYPE_TINY_BLOB &&
               mysql_type != MYSQL_TYPE_MEDIUM_BLOB &&
               mysql_type != MYSQL_TYPE_LONG_BLOB &&
-              mysql_type != MYSQL_TYPE_JSON &&
               mysql_type != MYSQL_TYPE_GEOMETRY);
 
   return ret;
@@ -9651,30 +9649,6 @@ create_ndb_column(THD *thd,
       col.setPartSize(4 * (NDB_MAX_TUPLE_SIZE_IN_WORDS - /* safty */ 13));
     }
     break;
-
-  // MySQL 5.7 binary-encoded JSON type
-  case MYSQL_TYPE_JSON:
-  {
-    /*
-      JSON columns are just like LONG BLOB columns except for inline size
-      and part size. Inline size is chosen to accommodate a large number
-      of embedded json documents without spilling over to the part table.
-      The tradeoff is that only three JSON columns can be defined in a table
-      due to the large inline size. Part size is chosen to optimize use of
-      pages in the part table. Note that much of the JSON functionality is
-      available by storing JSON documents in VARCHAR columns, including
-      extracting keys from documents to be used as indexes.
-     */
-    const int NDB_JSON_INLINE_SIZE = 4000;
-    const int NDB_JSON_PART_SIZE = 8100;
-
-    col.setType(NDBCOL::Blob);
-    col.setInlineSize(NDB_JSON_INLINE_SIZE);
-    col.setPartSize(NDB_JSON_PART_SIZE);
-    col.setStripeSize(ndb_blob_striping() ? 16 : 0);
-    break;
-  }
-
   // Other types
   case MYSQL_TYPE_ENUM:
     col.setType(NDBCOL::Char);
@@ -10406,7 +10380,6 @@ int ha_ndbcluster::create(const char *name,
     case MYSQL_TYPE_BLOB:    
     case MYSQL_TYPE_MEDIUM_BLOB:   
     case MYSQL_TYPE_LONG_BLOB: 
-    case MYSQL_TYPE_JSON:
     {
       NdbDictionary::Column * column= tab.getColumn(i);
       unsigned size= pk_length + (column->getPartSize()+3)/4 + 7;
@@ -12519,7 +12492,7 @@ int ndbcluster_table_exists_in_engine(handlerton *hton, THD* thd,
 
 
 extern "C" uchar* tables_get_key(const char *entry, size_t *length,
-                                my_bool not_used MY_ATTRIBUTE((unused)))
+                                my_bool not_used __attribute__((unused)))
 {
   *length= strlen(entry);
   return (uchar*) entry;
@@ -18722,21 +18695,6 @@ SHOW_VAR ndb_status_variables_export[]= {
   {NullS, NullS, SHOW_LONG, SHOW_SCOPE_GLOBAL}
 };
 
-
-static void cache_check_time_update(MYSQL_THD thd,
-                                    struct st_mysql_sys_var *var,
-                                    void *var_ptr,
-                                    const void *save)
-{
-  push_warning_printf(thd, Sql_condition::SL_WARNING,
-                      ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT,
-                      ER_THD(thd, ER_WARN_DEPRECATED_SYNTAX_NO_REPLACEMENT),
-                      "@@ndb_cache_check_time");
-
-  opt_ndb_cache_check_time= *static_cast<const ulong*>(save);
-}
-
-
 static MYSQL_SYSVAR_ULONG(
   cache_check_time,                  /* name */
   opt_ndb_cache_check_time,              /* var */
@@ -18744,10 +18702,9 @@ static MYSQL_SYSVAR_ULONG(
   "A dedicated thread is created to, at the given "
   "millisecond interval, invalidate the query cache "
   "if another MySQL server in the cluster has changed "
-  "the data in the database. "
-  "This variable is deprecated and will be removed in a future release.",
+  "the data in the database.",
   NULL,                              /* check func. */
-  &cache_check_time_update,          /* update func. */
+  NULL,                              /* update func. */
   0,                                 /* default */
   0,                                 /* min */
   ONE_YEAR_IN_SECONDS,               /* max */
@@ -19054,27 +19011,13 @@ static MYSQL_SYSVAR_BOOL(
   opt_ndb_log_update_as_write,       /* var */
   PLUGIN_VAR_OPCMDARG,
   "For efficiency log only after image as a write event. "
-  "Ignore before image. This may cause compatibility problems if "
+  "Ignore before image. This may cause compatability problems if "
   "replicating to other storage engines than ndbcluster.",
   NULL,                              /* check func. */
   NULL,                              /* update func. */
   1                                  /* default */
 );
 
-my_bool opt_ndb_log_update_minimal;
-static MYSQL_SYSVAR_BOOL(
-  log_update_minimal,                  /* name */
-  opt_ndb_log_update_minimal,          /* var */
-  PLUGIN_VAR_OPCMDARG,
-  "For efficiency, log updates in a minimal format"
-  "Log only the primary key value(s) in the before "
-  "image. Log only the changed columns in the after "
-  "image. This may cause compatibility problems if "
-  "replicating to other storage engines than ndbcluster.",
-  NULL,                              /* check func. */
-  NULL,                              /* update func. */
-  0                                  /* default */
-);
 
 my_bool opt_ndb_log_updated_only;
 static MYSQL_SYSVAR_BOOL(
@@ -19083,7 +19026,7 @@ static MYSQL_SYSVAR_BOOL(
   PLUGIN_VAR_OPCMDARG,
   "For efficiency log only updated columns. Columns are considered "
   "as \"updated\" even if they are updated with the same value. "
-  "This may cause compatibility problems if "
+  "This may cause compatability problems if "
   "replicating to other storage engines than ndbcluster.",
   NULL,                              /* check func. */
   NULL,                              /* update func. */
@@ -19405,7 +19348,6 @@ static struct st_mysql_sys_var* system_variables[]= {
   MYSQL_SYSVAR(eventbuffer_free_percent),
   MYSQL_SYSVAR(log_update_as_write),
   MYSQL_SYSVAR(log_updated_only),
-  MYSQL_SYSVAR(log_update_minimal),
   MYSQL_SYSVAR(log_empty_update),
   MYSQL_SYSVAR(log_orig),
   MYSQL_SYSVAR(distribution),

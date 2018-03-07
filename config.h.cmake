@@ -1,4 +1,4 @@
-/* Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
  
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -30,11 +30,11 @@
 #cmakedefine HAVE_LIBDL 1
 #cmakedefine HAVE_LIBRT 1
 #cmakedefine HAVE_LIBWRAP 1
-#cmakedefine HAVE_LIBWRAP_PROTOTYPES 1
 
 /* Header files */
 #cmakedefine HAVE_ALLOCA_H 1
 #cmakedefine HAVE_ARPA_INET_H 1
+#cmakedefine HAVE_DIRENT_H 1
 #cmakedefine HAVE_DLFCN_H 1
 #cmakedefine HAVE_EXECINFO_H 1
 #cmakedefine HAVE_FPU_CONTROL_H 1
@@ -116,6 +116,7 @@
 #cmakedefine HAVE_PREAD 1
 #cmakedefine HAVE_PTHREAD_CONDATTR_SETCLOCK 1
 #cmakedefine HAVE_PTHREAD_SIGMASK 1
+#cmakedefine HAVE_READDIR_R 1
 #cmakedefine HAVE_READLINK 1
 #cmakedefine HAVE_REALPATH 1
 #cmakedefine HAVE_SETFD 1
@@ -181,9 +182,6 @@
 #cmakedefine HAVE_U_INT32_T 1
 #cmakedefine HAVE_STRUCT_TIMESPEC
 
-/* Support for tagging symbols with __attribute__((visibility("hidden"))) */
-#cmakedefine HAVE_VISIBILITY_HIDDEN 1
-
 /* Code tests*/
 #cmakedefine STACK_DIRECTION @STACK_DIRECTION@
 #cmakedefine TIME_WITH_SYS_TIME 1
@@ -192,11 +190,11 @@
 #cmakedefine HAVE_FAKE_PAUSE_INSTRUCTION 1
 #cmakedefine HAVE_HMT_PRIORITY_INSTRUCTION 1
 #cmakedefine HAVE_ABI_CXA_DEMANGLE 1
+#cmakedefine HAVE_BSS_START 1
 #cmakedefine HAVE_BUILTIN_UNREACHABLE 1
 #cmakedefine HAVE_BUILTIN_EXPECT 1
 #cmakedefine HAVE_BUILTIN_STPCPY 1
 #cmakedefine HAVE_GCC_ATOMIC_BUILTINS 1
-#cmakedefine HAVE_GCC_SYNC_BUILTINS 1
 #cmakedefine HAVE_VALGRIND
 
 /* IPV6 */
@@ -274,7 +272,6 @@
 #cmakedefine HAVE_NCURSES_H 1
 #cmakedefine USE_LIBEDIT_INTERFACE 1
 #cmakedefine HAVE_HIST_ENTRY 1
-#cmakedefine USE_NEW_EDITLINE_INTERFACE 1
 
 /*
  * Libedit
@@ -365,7 +362,6 @@
 #cmakedefine HAVE_SYS_THREAD_SELFID 1
 #cmakedefine HAVE_SYS_GETTID 1
 #cmakedefine HAVE_PTHREAD_GETTHREADID_NP 1
-#cmakedefine HAVE_PTHREAD_SETNAME_NP 1
 #cmakedefine HAVE_INTEGER_PTHREAD_SELF 1
 
 /* Platform-specific C++ compiler behaviors we rely upon */
@@ -421,10 +417,7 @@
 #define HAVE_FCNTL_H 1
 #define HAVE_GETADDRINFO 1
 #define HAVE_INTTYPES_H 1
-/* libevent's select.c is not Windows compatible */
-#ifndef _WIN32
 #define HAVE_SELECT 1
-#endif
 #define HAVE_SIGNAL_H 1
 #define HAVE_STDARG_H 1
 #define HAVE_STDINT_H 1
@@ -435,11 +428,6 @@
 #define HAVE_SYS_STAT_H 1
 #define HAVE_SYS_TYPES_H 1
 #define SIZEOF_CHAR 1
-
-/*
- * Needed by libevent
- */
-#cmakedefine HAVE_SOCKLEN_T 1
 
 /* For --secure-file-priv */
 #cmakedefine DEFAULT_SECURE_FILE_PRIV_DIR @DEFAULT_SECURE_FILE_PRIV_DIR@

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -116,7 +116,6 @@
 #include <mysql/psi/mysql_memory.h>
 #include <mysql/psi/mysql_statement.h>
 
-#include "migrate_keyring.h"            // Migrate_keyring
 #include "mysql_com_server.h"
 #include "keycaches.h"
 #include "../storage/myisam/ha_myisam.h"
@@ -315,20 +314,10 @@ bool opt_endinfo, using_udf_functions;
 my_bool locked_in_memory;
 bool opt_using_transactions;
 bool volatile abort_loop;
-ulong opt_tc_log_size;
-
 static enum_server_operational_state server_operational_state= SERVER_BOOTING;
 ulong log_warnings;
 bool  opt_log_syslog_enable;
 char *opt_log_syslog_tag= NULL;
-char *opt_keyring_migration_user= NULL;
-char *opt_keyring_migration_host= NULL;
-char *opt_keyring_migration_password= NULL;
-char *opt_keyring_migration_socket= NULL;
-char *opt_keyring_migration_source= NULL;
-char *opt_keyring_migration_destination= NULL;
-ulong opt_keyring_migration_port= 0;
-bool migrate_connect_options= 0;
 #ifndef _WIN32
 bool  opt_log_syslog_include_pid;
 char *opt_log_syslog_facility;
@@ -359,7 +348,6 @@ ulong slow_start_timeout;
 
 my_bool opt_bootstrap= 0;
 my_bool opt_initialize= 0;
-my_bool opt_disable_partition_check= TRUE;
 my_bool opt_skip_slave_start = 0; ///< If set, slave is not autostarted
 my_bool opt_reckless_slave = 0;
 my_bool opt_enable_named_pipe= 0;
@@ -493,7 +481,6 @@ bool thread_cache_size_specified= false;
 bool host_cache_size_specified= false;
 bool table_definition_cache_specified= false;
 ulong locked_account_connection_count= 0;
-bool opt_keyring_operations= TRUE;
 
 /**
   Limit of the total number of prepared statements in the server.
@@ -686,7 +673,6 @@ mysql_cond_t COND_server_started;
 mysql_mutex_t LOCK_reset_gtid_table;
 mysql_mutex_t LOCK_compress_gtid_table;
 mysql_cond_t COND_compress_gtid_table;
-mysql_mutex_t LOCK_group_replication_handler;
 #if !defined (EMBEDDED_LIBRARY) && !defined(_WIN32)
 mysql_mutex_t LOCK_socket_listener_active;
 mysql_cond_t COND_socket_listener_active;
@@ -695,12 +681,6 @@ mysql_cond_t COND_start_signal_handler;
 #endif
 
 bool mysqld_server_started= false;
-
-/*
-  The below lock protects access to global server variable
-  keyring_operations.
-*/
-mysql_mutex_t LOCK_keyring_operations;
 
 File_parser_dummy_hook file_parser_dummy_hook;
 
@@ -897,7 +877,7 @@ static bool pid_file_created= false;
 static void usage(void);
 static void clean_up_mutexes(void);
 static void create_pid_file();
-static void mysqld_exit(int exit_code) MY_ATTRIBUTE((noreturn));
+static void mysqld_exit(int exit_code) __attribute__((noreturn));
 static void delete_pid_file(myf flags);
 #endif
 
@@ -993,12 +973,7 @@ public:
       sql_print_warning(ER_DEFAULT(ER_FORCING_CLOSE),my_progname,
                         closing_thd->thread_id(),
                         (main_sctx_user.length ? main_sctx_user.str : ""));
-      /*
-        Do not generate MYSQL_AUDIT_CONNECTION_DISCONNECT event, when closing
-        thread close sessions. Each session will generate DISCONNECT event by
-        itself.
-      */
-      close_connection(closing_thd, 0, is_server_shutdown, false);
+      close_connection(closing_thd, 0, is_server_shutdown);
     }
   }
 private:
@@ -1071,8 +1046,6 @@ static void close_connections(void)
   Call_close_conn call_close_conn(true);
   thd_manager->do_for_all_thd(&call_close_conn);
 
-  (void) RUN_HOOK(server_state, after_server_shutdown, (NULL));
-
   /*
     All threads have now been aborted. Stop event scheduler thread
     after aborting all client connections, otherwise user may
@@ -1092,6 +1065,8 @@ static void close_connections(void)
 
   delete_slave_info_objects();
   DBUG_PRINT("quit",("close_connections thread"));
+
+  (void) RUN_HOOK(server_state, after_server_shutdown, (NULL));
 
   DBUG_VOID_RETURN;
 }
@@ -1448,7 +1423,6 @@ static void clean_up_mutexes()
   mysql_cond_destroy(&COND_start_signal_handler);
   mysql_mutex_destroy(&LOCK_start_signal_handler);
 #endif
-  mysql_mutex_destroy(&LOCK_keyring_operations);
 }
 
 
@@ -1958,7 +1932,7 @@ void my_init_signals()
 #else // !_WIN32
 
 extern "C" {
-static void empty_signal_handler(int sig MY_ATTRIBUTE((unused)))
+static void empty_signal_handler(int sig __attribute__((unused)))
 { }
 }
 
@@ -2084,7 +2058,7 @@ static void start_signal_handler()
 
 /** This thread handles SIGTERM, SIGQUIT and SIGHUP signals. */
 /* ARGSUSED */
-extern "C" void *signal_hand(void *arg MY_ATTRIBUTE((unused)))
+extern "C" void *signal_hand(void *arg __attribute__((unused)))
 {
   my_thread_init();
 
@@ -2240,38 +2214,18 @@ void my_message_sql(uint error, const char *str, myf MyFlags)
     error= ER_UNKNOWN_ERROR;
   }
 
-  if (thd)
-  {
-    Sql_condition::enum_severity_level level= Sql_condition::SL_ERROR;
-
-    /**
-      Reporting an error invokes audit API call that notifies the error
-      to the plugin. Audit API that generate the error adds a protection
-      (condition handler) that prevents entering infinite recursion, when
-      a plugin signals error, when already handling the error.
-
-      handle_condition is normally invoked from within raise_condition,
-      but we need to prevent recursion befere notifying error to the plugin.
-
-      Additionaly, handle_condition must be called once during reporting
-      an error, so the raise_condition is called depending on the result of
-      the handle_condition call.
-    */
-    bool handle= thd->handle_condition(error,
-                                       mysql_errno_to_sqlstate(error),
-                                       &level,
-                                       str ? str : ER(error));
 #ifndef EMBEDDED_LIBRARY
-    if (!handle)
-      mysql_audit_notify(thd, AUDIT_EVENT(MYSQL_AUDIT_GENERAL_ERROR),
-                         error, str, strlen(str));
+  mysql_audit_general(thd, MYSQL_AUDIT_GENERAL_ERROR, error, str);
 #endif
 
+  if (thd)
+  {
     if (MyFlags & ME_FATALERROR)
       thd->is_fatal_error= 1;
-
-    if (!handle)
-      (void) thd->raise_condition(error, NULL, level, str, false);
+    (void) thd->raise_condition(error,
+                                NULL,
+                                Sql_condition::SL_ERROR,
+                                str);
   }
 
   /* When simulating OOM, skip writing to error log to avoid mtr errors */
@@ -2567,7 +2521,6 @@ static void init_sql_statement_names()
 #ifdef HAVE_PSI_STATEMENT_INTERFACE
 PSI_statement_info sql_statement_info[(uint) SQLCOM_END + 1];
 PSI_statement_info com_statement_info[(uint) COM_END + 1];
-PSI_statement_info stmt_info_new_packet;
 
 /**
   Initialize the command names array.
@@ -2622,7 +2575,7 @@ rpl_make_log_name(PSI_memory_key key,
                   const char *ext)
 {
   DBUG_ENTER("rpl_make_log_name");
-  DBUG_PRINT("enter", ("opt: %s, def: %s, ext: %s", (opt && opt[0])? opt : "", def, ext));
+  DBUG_PRINT("enter", ("opt: %s, def: %s, ext: %s", opt, def, ext));
   char buff[FN_REFLEN];
   /*
     opt[0] needs to be checked to make sure opt name is not an empty
@@ -2809,10 +2762,18 @@ int init_common_variables()
                      SQLCOM_END + 7);
 #endif
 
+#ifndef NO_EMBEDDED_ACCESS_CHECKS
+
+  if (strlen(DEFAULT_EARLY_PLUGIN_LOAD))
+  {
+    i_string *default_early_plugin= new i_string(DEFAULT_EARLY_PLUGIN_LOAD);
+    opt_early_plugin_load_list_ptr->push_back(default_early_plugin);
+  }
+
+#endif /* NO_EMBEDDED_ACCESS_CHECKS */
+
   if (get_options(&remaining_argc, &remaining_argv))
     return 1;
-
-  update_parser_max_mem_size();
 
   if (log_syslog_init())
     opt_log_syslog_enable= 0;
@@ -2954,7 +2915,6 @@ int init_common_variables()
   if (init_errmessage())  /* Read error messages from file */
     return 1;
   init_client_errs();
-
   mysql_client_plugin_init();
   if (item_create_init())
     return 1;
@@ -3063,22 +3023,6 @@ int init_common_variables()
     sql_print_warning("Although a path was specified for the "
                       "--slow-query-log-file option, log tables are used. "
                       "To enable logging to files use the --log-output=file option.");
-
-  if (opt_general_logname &&
-      !is_valid_log_name(opt_general_logname, strlen(opt_general_logname)))
-  {
-    sql_print_error("Invalid value for --general_log_file: %s",
-                    opt_general_logname);
-    return 1;
-  }
-
-  if (opt_slow_logname &&
-      !is_valid_log_name(opt_slow_logname, strlen(opt_slow_logname)))
-  {
-    sql_print_error("Invalid value for --slow_query_log_file: %s",
-                    opt_slow_logname);
-    return 1;
-  }
 
 #define FIX_LOG_VAR(VAR, ALT)                                   \
   if (!VAR || !*VAR)                                            \
@@ -3218,8 +3162,6 @@ static int init_thread_environment()
   mysql_cond_init(key_COND_manager, &COND_manager);
   mysql_mutex_init(key_LOCK_server_started,
                    &LOCK_server_started, MY_MUTEX_INIT_FAST);
-  mysql_mutex_init(key_LOCK_keyring_operations,
-                   &LOCK_keyring_operations, MY_MUTEX_INIT_FAST);
   mysql_cond_init(key_COND_server_started, &COND_server_started);
   mysql_mutex_init(key_LOCK_reset_gtid_table,
                    &LOCK_reset_gtid_table, MY_MUTEX_INIT_FAST);
@@ -3227,8 +3169,6 @@ static int init_thread_environment()
                    &LOCK_compress_gtid_table, MY_MUTEX_INIT_FAST);
   mysql_cond_init(key_COND_compress_gtid_table,
                   &COND_compress_gtid_table);
-  mysql_mutex_init(key_LOCK_group_replication_handler,
-                   &LOCK_group_replication_handler, MY_MUTEX_INIT_FAST);
 #ifndef EMBEDDED_LIBRARY
   Events::init_mutexes();
 #if defined(_WIN32)
@@ -3520,7 +3460,6 @@ static int generate_server_uuid()
                     " to allocate the THD.");
     return 1;
   }
-
   thd->thread_stack= (char*) &thd;
   thd->store_globals();
 
@@ -3636,7 +3575,7 @@ static int init_server_auto_options()
   /* load_defaults require argv[0] is not null */
   char **argv= &name;
   int argc= 1;
-  if (!check_file_permissions(fname, false))
+  if (!check_file_permissions(fname))
   {
     /*
       Found a world writable file hence removing it as it is dangerous to write
@@ -3665,24 +3604,6 @@ static int init_server_auto_options()
     if (!Uuid::is_valid(uuid))
     {
       sql_print_error("The server_uuid stored in auto.cnf file is not a valid UUID.");
-      goto err;
-    }
-    /*
-      Uuid::is_valid() cannot do strict check on the length as it will be
-      called by GTID::is_valid() as well (GTID = UUID:seq_no). We should
-      explicitly add the *length check* here in this function.
-
-      If UUID length is less than '36' (UUID_LENGTH), that error case would have
-      got caught in above is_valid check. The below check is to make sure that
-      length is not greater than UUID_LENGTH i.e., there are no extra characters
-      (Garbage) at the end of the valid UUID.
-    */
-    if (strlen(uuid) > UUID_LENGTH)
-    {
-      sql_print_error("Garbage characters found at the end of the server_uuid "
-                      "value in auto.cnf file. It should be of length '%d' "
-                      "(UUID_LENGTH). Clear it and restart the server. ",
-                      UUID_LENGTH);
       goto err;
     }
     strcpy(server_uuid, uuid);
@@ -3996,28 +3917,31 @@ a file name for --log-bin-index option", opt_binlog_index_name);
   DBUG_PRINT("debug",
              ("opt_bin_logname: %s, opt_relay_logname: %s, pidfile_name: %s",
               opt_bin_logname, opt_relay_logname, pidfile_name));
-  /*
-    opt_relay_logname[0] needs to be checked to make sure opt relaylog name is
-    not an empty string, incase it is an empty string default file
-    extension will be passed
-   */
-  relay_log_basename=
-    rpl_make_log_name(key_memory_MYSQL_RELAY_LOG_basename,
-                      opt_relay_logname, default_logfile_name,
-                      (opt_relay_logname && opt_relay_logname[0]) ? "" : "-relay-bin");
-
-  if (relay_log_basename != NULL)
-    relay_log_index=
-      rpl_make_log_name(key_memory_MYSQL_RELAY_LOG_index,
-                        opt_relaylog_index_name, relay_log_basename, ".index");
-
-  if (relay_log_basename == NULL || relay_log_index == NULL)
+  if (opt_relay_logname)
   {
-    sql_print_error("Unable to create replication path names:"
-                    " out of memory or path names too long"
-                    " (path name exceeds " STRINGIFY_ARG(FN_REFLEN)
-                    " or file name exceeds " STRINGIFY_ARG(FN_LEN) ").");
-    unireg_abort(MYSQLD_ABORT_EXIT);
+    /*
+      opt_relay_logname[0] needs to be checked to make sure opt relaylog name is
+      not an empty string, incase it is an empty string default file
+      extension will be passed
+     */
+    relay_log_basename=
+      rpl_make_log_name(key_memory_MYSQL_RELAY_LOG_basename,
+                        opt_relay_logname, default_logfile_name,
+                        (opt_relay_logname && opt_relay_logname[0]) ? "" : "-relay-bin");
+
+    if (relay_log_basename != NULL)
+      relay_log_index=
+        rpl_make_log_name(key_memory_MYSQL_RELAY_LOG_index,
+                          opt_relaylog_index_name, relay_log_basename, ".index");
+
+    if (relay_log_basename == NULL || relay_log_index == NULL)
+    {
+      sql_print_error("Unable to create replication path names:"
+                      " out of memory or path names too long"
+                      " (path name exceeds " STRINGIFY_ARG(FN_REFLEN)
+                      " or file name exceeds " STRINGIFY_ARG(FN_LEN) ").");
+      unireg_abort(MYSQLD_ABORT_EXIT);
+    }
   }
 #endif /* !EMBEDDED_LIBRARY */
 
@@ -4045,21 +3969,6 @@ a file name for --log-bin-index option", opt_binlog_index_name);
   */
   tc_log= &tc_log_dummy;
 
-  /*Load early plugins */
-  if (plugin_register_early_plugins(&remaining_argc, remaining_argv,
-                                    opt_help ?
-                                      PLUGIN_INIT_SKIP_INITIALIZATION : 0))
-  {
-    sql_print_error("Failed to initialize early plugins.");
-    unireg_abort(MYSQLD_ABORT_EXIT);
-  }
-  /* Load builtin plugins, initialize MyISAM, CSV and InnoDB */
-  if (plugin_register_builtin_and_init_core_se(&remaining_argc,
-                                               remaining_argv))
-  {
-    sql_print_error("Failed to initialize builtin plugins.");
-    unireg_abort(MYSQLD_ABORT_EXIT);
-  }
   /*
     Skip reading the plugin table when starting with --help in order
     to also skip initializing InnoDB. This provides a simpler and more
@@ -4067,12 +3976,12 @@ a file name for --log-bin-index option", opt_binlog_index_name);
     directory does not exist, exists but is empty, exists with InnoDB
     system tablespaces present etc.
   */
-  if (plugin_register_dynamic_and_init_all(&remaining_argc, remaining_argv,
+  if (plugin_init(&remaining_argc, remaining_argv,
                   (opt_noacl ? PLUGIN_INIT_SKIP_PLUGIN_TABLE : 0) |
                   (opt_help ? (PLUGIN_INIT_SKIP_INITIALIZATION |
                                PLUGIN_INIT_SKIP_PLUGIN_TABLE) : 0)))
   {
-    sql_print_error("Failed to initialize dynamic plugins.");
+    sql_print_error("Failed to initialize plugins.");
     unireg_abort(MYSQLD_ABORT_EXIT);
   }
   plugins_are_initialized= TRUE;  /* Don't separate from init function */
@@ -4385,16 +4294,6 @@ static void test_lc_time_sz()
 }
 #endif//DBUG_OFF
 
-/*
-  @brief : Set opt_super_readonly to user supplied value before
-           enabling communication channels to accept user connections
-*/
-
-static void set_super_read_only_post_init()
-{
-  opt_super_readonly= super_read_only;
-}
-
 #ifdef _WIN32
 int win_main(int argc, char **argv)
 #else
@@ -4423,7 +4322,6 @@ int mysqld_main(int argc, char **argv)
   orig_argc= argc;
   orig_argv= argv;
   my_getopt_use_args_separator= TRUE;
-  my_defaults_read_login_file= FALSE;
   if (load_defaults(MYSQL_CONFIG_NAME, load_default_groups, &argc, &argv))
   {
     flush_error_log_messages();
@@ -4460,12 +4358,10 @@ int mysqld_main(int argc, char **argv)
     exit(MYSQLD_ABORT_EXIT);
   }
 
-  if (opt_daemonize && log_error_dest == disabled_my_option &&
-      (isatty(STDOUT_FILENO) || isatty(STDERR_FILENO)))
+  if (opt_daemonize && (isatty(STDOUT_FILENO) || isatty(STDERR_FILENO)))
   {
-    fprintf(stderr, "Please enable --log-error option or set appropriate "
-                    "redirections for standard output and/or standard error "
-                    "in daemon mode.\n");
+    fprintf(stderr, "Please set appopriate redirections for "
+                    "standard output and/or standard error in daemon mode.\n");
     exit(MYSQLD_ABORT_EXIT);
   }
 
@@ -4637,6 +4533,15 @@ int mysqld_main(int argc, char **argv)
   srand(static_cast<uint>(time(NULL)));
 #endif
 
+  /*
+    We have enough space for fiddling with the argv, continue
+  */
+  if (my_setwd(mysql_real_data_home,MYF(MY_WME)) && !opt_help)
+  {
+    sql_print_error("failed to set datadir to %s", mysql_real_data_home);
+    unireg_abort(MYSQLD_ABORT_EXIT);        /* purecov: inspected */
+  }
+
 #ifndef _WIN32
   if ((user_info= check_user(mysqld_user)))
   {
@@ -4681,56 +4586,6 @@ int mysqld_main(int argc, char **argv)
   }
 #endif // !_WIN32
 
-  /*
-   initiate key migration if any one of the migration specific
-   options are provided.
-  */
-  if (opt_keyring_migration_source ||
-      opt_keyring_migration_destination ||
-      migrate_connect_options)
-  {
-    Migrate_keyring mk;
-    if (mk.init(remaining_argc, remaining_argv,
-                opt_keyring_migration_source,
-                opt_keyring_migration_destination,
-                opt_keyring_migration_user,
-                opt_keyring_migration_host,
-                opt_keyring_migration_password,
-                opt_keyring_migration_socket,
-                opt_keyring_migration_port))
-    {
-      sql_print_error(ER_DEFAULT(ER_KEYRING_MIGRATION_STATUS),
-                      "failed");
-      log_error_dest= "stderr";
-      flush_error_log_messages();
-      unireg_abort(MYSQLD_ABORT_EXIT);
-    }
-
-    if (mk.execute())
-    {
-      sql_print_error(ER_DEFAULT(ER_KEYRING_MIGRATION_STATUS),
-                      "failed");
-      log_error_dest= "stderr";
-      flush_error_log_messages();
-      unireg_abort(MYSQLD_ABORT_EXIT);
-    }
-
-    sql_print_information(ER_DEFAULT(ER_KEYRING_MIGRATION_STATUS),
-                          "successfull");
-    log_error_dest= "stderr";
-    flush_error_log_messages();
-    unireg_abort(MYSQLD_SUCCESS_EXIT);
-  }
-
-  /*
-   We have enough space for fiddling with the argv, continue
-  */
-  if (my_setwd(mysql_real_data_home,MYF(MY_WME)) && !opt_help)
-  {
-    sql_print_error("failed to set datadir to %s", mysql_real_data_home);
-    unireg_abort(MYSQLD_ABORT_EXIT);        /* purecov: inspected */
-  }
-
   //If the binlog is enabled, one needs to provide a server-id
   if (opt_bin_log && !(server_id_supplied) )
   {
@@ -4749,6 +4604,10 @@ int mysqld_main(int argc, char **argv)
 #endif
 
   if (init_server_components())
+    unireg_abort(MYSQLD_ABORT_EXIT);
+
+  if (mysql_audit_notify(MYSQL_AUDIT_SERVER_STARTUP_STARTUP,
+                         (const char**)argv, argc))
     unireg_abort(MYSQLD_ABORT_EXIT);
 
   /*
@@ -4778,7 +4637,7 @@ int mysqld_main(int argc, char **argv)
     regardless to avoid possible future bugs if gtid_state ever
     needs to do anything else.
   */
-  global_sid_lock->wrlock();
+  global_sid_lock->rdlock();
   int gtid_ret= gtid_state->init();
   global_sid_lock->unlock();
 
@@ -5023,20 +4882,11 @@ int mysqld_main(int argc, char **argv)
     int error= bootstrap(mysql_stdin);
     unireg_abort(error ? MYSQLD_ABORT_EXIT : MYSQLD_SUCCESS_EXIT);
   }
-
   if (opt_init_file && *opt_init_file)
   {
     if (read_init_file(opt_init_file))
       unireg_abort(MYSQLD_ABORT_EXIT);
   }
-
-  /*
-    Event must be invoked after error_handler_hook is assigned to
-    my_message_sql, otherwise my_message will not cause the event to abort.
-  */
-  if (mysql_audit_notify(AUDIT_EVENT(MYSQL_AUDIT_SERVER_STARTUP_STARTUP),
-                         (const char **) argv, argc))
-    unireg_abort(MYSQLD_ABORT_EXIT);
 
 #ifdef _WIN32
   create_shutdown_thread();
@@ -5070,44 +4920,13 @@ int mysqld_main(int argc, char **argv)
                       opt_ndb_wait_setup);
   }
 #endif
-
-  if (!opt_bootstrap)
-  {
-    /*
-      Execute an I_S query to implicitly check for tables using the deprecated
-      partition engine. No need to do this during bootstrap. We ignore the
-      return value from the query execution. Note that this must be done after
-      NDB is initialized to avoid polluting the server with invalid table shares.
-    */
-    if (!opt_disable_partition_check)
-    {
-      sql_print_information(
-              "Executing 'SELECT * FROM INFORMATION_SCHEMA.TABLES;' "
-              "to get a list of tables using the deprecated partition "
-              "engine.");
-
-      sql_print_information("Beginning of list of non-natively partitioned tables");
-      (void) bootstrap_single_query(
-              "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
-              "WHERE CREATE_OPTIONS LIKE '%partitioned%';");
-      sql_print_information("End of list of non-natively partitioned tables");
-    }
-  }
-
-  /*
-    Set opt_super_readonly here because if opt_super_readonly is set
-    in get_option, it will create problem while setting up event scheduler.
-  */
-  set_super_read_only_post_init();
+  (void) RUN_HOOK(server_state, before_handle_connection, (NULL));
 
   DBUG_PRINT("info", ("Block, listening for incoming connections"));
 
   (void)MYSQL_SET_STAGE(0 ,__FILE__, __LINE__);
 
   server_operational_state= SERVER_OPERATING;
-
-  (void) RUN_HOOK(server_state, before_handle_connection, (NULL));
-
 #if defined(_WIN32)
   setup_conn_event_handler_threads();
 #else
@@ -5638,42 +5457,6 @@ struct my_option my_long_early_options[]=
    " Create a super user with empty password.",
    &opt_initialize_insecure, &opt_initialize_insecure, 0, GET_BOOL, NO_ARG,
    0, 0, 0, 0, 0, 0},
-  {"disable-partition-engine-check", 0,
-   "Skip the check for non-natively partitioned tables during bootstrap. "
-   "This option is deprecated along with the partition engine.",
-   &opt_disable_partition_check, &opt_disable_partition_check, 0, GET_BOOL,
-   NO_ARG, TRUE, 0, 0, 0, 0, 0},
-  {"keyring-migration-source", OPT_KEYRING_MIGRATION_SOURCE,
-   "Keyring plugin from where the keys needs to "
-   "be migrated to. This option must be specified along with "
-   "--keyring-migration-destination.",
-   &opt_keyring_migration_source, &opt_keyring_migration_source,
-   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"keyring-migration-destination", OPT_KEYRING_MIGRATION_DESTINATION,
-   "Keyring plugin to which the keys are "
-   "migrated to. This option must be specified along with "
-   "--keyring-migration-source.",
-   &opt_keyring_migration_destination, &opt_keyring_migration_destination,
-   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"keyring-migration-user", OPT_KEYRING_MIGRATION_USER,
-   "User to login to server.",
-   &opt_keyring_migration_user, &opt_keyring_migration_user,
-   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"keyring-migration-host", OPT_KEYRING_MIGRATION_HOST, "Connect to host.",
-   &opt_keyring_migration_host, &opt_keyring_migration_host,
-   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"keyring-migration-password", OPT_KEYRING_MIGRATION_PASSWORD,
-   "Password to use when connecting to server during keyring migration. "
-   "If password value is not specified then it will be asked from the tty.",
-   0, 0, 0, GET_PASSWORD, OPT_ARG, 0, 0, 0, 0, 0, 0},
-  {"keyring-migration-socket", OPT_KEYRING_MIGRATION_SOCKET,
-   "The socket file to use for connection.",
-   &opt_keyring_migration_socket, &opt_keyring_migration_socket,
-   0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"keyring-migration-port", OPT_KEYRING_MIGRATION_PORT,
-   "Port number to use for connection.",
-   &opt_keyring_migration_port, &opt_keyring_migration_port,
-   0, GET_ULONG, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   { 0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0 }
 };
 
@@ -5844,9 +5627,8 @@ struct my_option my_long_options[]=
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"log-tc-size", 0, "Size of transaction coordinator log.",
    &opt_tc_log_size, &opt_tc_log_size, 0, GET_ULONG,
-   REQUIRED_ARG, TC_LOG_MIN_PAGES * my_getpagesize(),
-   TC_LOG_MIN_PAGES * my_getpagesize(), ULONG_MAX, 0,
-   my_getpagesize(), 0},
+   REQUIRED_ARG, TC_LOG_MIN_SIZE, TC_LOG_MIN_SIZE, ULONG_MAX, 0,
+   TC_LOG_PAGE_SIZE, 0},
   {"master-info-file", 0,
    "The location and name of the file that remembers the master and where "
    "the I/O replication thread is in the master's binlogs.",
@@ -5994,7 +5776,6 @@ struct my_option my_long_options[]=
    0, GET_UINT, OPT_ARG, 0, 0, UINT_MAX, 0, 0, 0},
 #endif /* defined(ENABLED_DEBUG_SYNC) */
   {"temp-pool", 0,
-   "This option is deprecated and will be removed in a future version. "
 #if defined(__linux__)
    "Using this option will cause most temporary files created to use a small "
    "set of names, rather than a unique name for each new file.",
@@ -6003,12 +5784,12 @@ struct my_option my_long_options[]=
 #endif
    &use_temp_pool, &use_temp_pool, 0, GET_BOOL, NO_ARG, 1,
    0, 0, 0, 0, 0},
-  {"transaction-isolation", OPT_TRANSACTION_ISOLATION,
+  {"transaction-isolation", 0,
    "Default transaction isolation level.",
    &global_system_variables.tx_isolation,
    &global_system_variables.tx_isolation, &tx_isolation_typelib,
    GET_ENUM, REQUIRED_ARG, ISO_REPEATABLE_READ, 0, 0, 0, 0, 0},
-  {"transaction-read-only", OPT_TRANSACTION_READ_ONLY,
+  {"transaction-read-only", 0,
    "Default transaction access mode. "
    "True if transactions are read-only.",
    &global_system_variables.tx_read_only,
@@ -7251,7 +7032,7 @@ static int mysql_init_variables(void)
 
 my_bool
 mysqld_get_one_option(int optid,
-                      const struct my_option *opt MY_ATTRIBUTE((unused)),
+                      const struct my_option *opt __attribute__((unused)),
                       char *argument)
 {
   switch(optid) {
@@ -7263,12 +7044,10 @@ mysqld_get_one_option(int optid,
     break;
   case 'a':
     global_system_variables.sql_mode= MODE_ANSI;
-    global_system_variables.tx_isolation=
-           global_system_variables.transaction_isolation= ISO_SERIALIZABLE;
+    global_system_variables.tx_isolation= ISO_SERIALIZABLE;
     break;
   case 'b':
     strmake(mysql_home,argument,sizeof(mysql_home)-1);
-    mysql_home_ptr= mysql_home;
     break;
   case 'C':
     if (default_collation_name == compiled_default_collation_name)
@@ -7657,32 +7436,11 @@ pfs_error:
     sql_print_warning("The use of InnoDB is mandatory since MySQL 5.7. "
                       "The former options like '--innodb=0/1/OFF/ON' or "
                       "'--skip-innodb' are ignored.");
-    break;
   case OPT_AVOID_TEMPORAL_UPGRADE:
     push_deprecated_warn_no_replacement(NULL, "avoid_temporal_upgrade");
     break;
   case OPT_SHOW_OLD_TEMPORALS:
     push_deprecated_warn_no_replacement(NULL, "show_old_temporals");
-    break;
-  case OPT_KEYRING_MIGRATION_PASSWORD:
-    if (argument)
-    {
-      char *start= argument;
-      opt_keyring_migration_password= my_strdup(PSI_NOT_INSTRUMENTED,
-        argument, MYF(MY_FAE));
-      while (*argument) *argument++= 'x';
-      if (*start)
-       start[1]= 0;
-    }
-    else
-      opt_keyring_migration_password= get_tty_password(NullS);
-    migrate_connect_options= 1;
-    break;
-  case OPT_KEYRING_MIGRATION_USER:
-  case OPT_KEYRING_MIGRATION_HOST:
-  case OPT_KEYRING_MIGRATION_SOCKET:
-  case OPT_KEYRING_MIGRATION_PORT:
-    migrate_connect_options= 1;
     break;
   case OPT_ENFORCE_GTID_CONSISTENCY:
   {
@@ -7692,16 +7450,7 @@ pfs_error:
       sql_print_warning("option 'enforce-gtid-consistency': value '%s' "
                         "was not recognized. Setting enforce-gtid-consistency "
                         "to OFF.", wrong_value);
-    break;
   }
-  case OPT_TRANSACTION_READ_ONLY:
-    global_system_variables.transaction_read_only=
-                            global_system_variables.tx_read_only;
-    break;
-  case OPT_TRANSACTION_ISOLATION:
-    global_system_variables.transaction_isolation=
-                            global_system_variables.tx_isolation;
-    break;
   }
   return 0;
 }
@@ -7972,8 +7721,6 @@ static int get_options(int *argc_ptr, char ***argv_ptr)
     return 1;
   }
 
-  /* If --super-read-only was specified, set read_only to 1 */
-  read_only= super_read_only ? super_read_only : read_only;
   opt_readonly= read_only;
 
   return 0;
@@ -8020,7 +7767,7 @@ static char *get_relative_path(const char *path)
       strcmp(DEFAULT_MYSQL_HOME,FN_ROOTDIR))
   {
     path+= strlen(DEFAULT_MYSQL_HOME);
-    while (is_directory_separator(*path))
+    while (*path == FN_LIBCHAR || *path == FN_LIBCHAR2)
       path++;
   }
   return (char*) path;
@@ -8630,8 +8377,7 @@ PSI_mutex_key
   key_structure_guard_mutex, key_TABLE_SHARE_LOCK_ha_data,
   key_LOCK_error_messages,
   key_LOCK_log_throttle_qni, key_LOCK_query_plan, key_LOCK_thd_query,
-  key_LOCK_cost_const, key_LOCK_current_cond,
-  key_LOCK_keyring_operations;
+  key_LOCK_cost_const, key_LOCK_current_cond;
 PSI_mutex_key key_RELAYLOG_LOCK_commit;
 PSI_mutex_key key_RELAYLOG_LOCK_commit_queue;
 PSI_mutex_key key_RELAYLOG_LOCK_done;
@@ -8650,7 +8396,6 @@ PSI_mutex_key key_mts_gaq_LOCK;
 PSI_mutex_key key_thd_timer_mutex;
 PSI_mutex_key key_LOCK_offline_mode;
 PSI_mutex_key key_LOCK_default_password_lifetime;
-PSI_mutex_key key_LOCK_group_replication_handler;
 
 #ifdef HAVE_REPLICATION
 PSI_mutex_key key_commit_order_manager_mutex;
@@ -8698,7 +8443,6 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_LOCK_sql_slave_skip_counter, "LOCK_sql_slave_skip_counter", PSI_FLAG_GLOBAL},
   { &key_LOCK_slave_net_timeout, "LOCK_slave_net_timeout", PSI_FLAG_GLOBAL},
   { &key_LOCK_server_started, "LOCK_server_started", PSI_FLAG_GLOBAL},
-  { &key_LOCK_keyring_operations, "LOCK_keyring_operations", PSI_FLAG_GLOBAL},
 #if !defined(EMBEDDED_LIBRARY) && !defined(_WIN32)
   { &key_LOCK_socket_listener_active, "LOCK_socket_listener_active", PSI_FLAG_GLOBAL},
   { &key_LOCK_start_signal_handler, "LOCK_start_signal_handler", PSI_FLAG_GLOBAL},
@@ -8706,9 +8450,9 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_LOCK_status, "LOCK_status", PSI_FLAG_GLOBAL},
   { &key_LOCK_system_variables_hash, "LOCK_system_variables_hash", PSI_FLAG_GLOBAL},
   { &key_LOCK_table_share, "LOCK_table_share", PSI_FLAG_GLOBAL},
-  { &key_LOCK_thd_data, "THD::LOCK_thd_data", PSI_FLAG_VOLATILITY_SESSION},
-  { &key_LOCK_thd_query, "THD::LOCK_thd_query", PSI_FLAG_VOLATILITY_SESSION},
-  { &key_LOCK_thd_sysvar, "THD::LOCK_thd_sysvar", PSI_FLAG_VOLATILITY_SESSION},
+  { &key_LOCK_thd_data, "THD::LOCK_thd_data", 0},
+  { &key_LOCK_thd_query, "THD::LOCK_thd_query", 0},
+  { &key_LOCK_thd_sysvar, "THD::LOCK_thd_sysvar", 0},
   { &key_LOCK_user_conn, "LOCK_user_conn", PSI_FLAG_GLOBAL},
   { &key_LOCK_uuid_generator, "LOCK_uuid_generator", PSI_FLAG_GLOBAL},
   { &key_LOCK_sql_rand, "LOCK_sql_rand", PSI_FLAG_GLOBAL},
@@ -8732,10 +8476,10 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_LOCK_error_messages, "LOCK_error_messages", PSI_FLAG_GLOBAL},
   { &key_LOCK_log_throttle_qni, "LOCK_log_throttle_qni", PSI_FLAG_GLOBAL},
   { &key_gtid_ensure_index_mutex, "Gtid_state", PSI_FLAG_GLOBAL},
-  { &key_LOCK_query_plan, "THD::LOCK_query_plan", PSI_FLAG_VOLATILITY_SESSION},
+  { &key_LOCK_query_plan, "THD::LOCK_query_plan", 0},
   { &key_LOCK_cost_const, "Cost_constant_cache::LOCK_cost_const",
     PSI_FLAG_GLOBAL},  
-  { &key_LOCK_current_cond, "THD::LOCK_current_cond", PSI_FLAG_VOLATILITY_SESSION},
+  { &key_LOCK_current_cond, "THD::LOCK_current_cond", 0},
   { &key_mts_temp_table_LOCK, "key_mts_temp_table_LOCK", 0},
   { &key_LOCK_reset_gtid_table, "LOCK_reset_gtid_table", PSI_FLAG_GLOBAL},
   { &key_LOCK_compress_gtid_table, "LOCK_compress_gtid_table", PSI_FLAG_GLOBAL},
@@ -8746,8 +8490,7 @@ static PSI_mutex_info all_server_mutexes[]=
   { &key_mutex_slave_worker_hash, "Relay_log_info::slave_worker_hash_lock", 0},
 #endif
   { &key_LOCK_offline_mode, "LOCK_offline_mode", PSI_FLAG_GLOBAL},
-  { &key_LOCK_default_password_lifetime, "LOCK_default_password_lifetime", PSI_FLAG_GLOBAL},
-  { &key_LOCK_group_replication_handler, "LOCK_group_replication_handler", PSI_FLAG_GLOBAL}
+  { &key_LOCK_default_password_lifetime, "LOCK_default_password_lifetime", PSI_FLAG_GLOBAL}
 };
 
 PSI_rwlock_key key_rwlock_LOCK_grant, key_rwlock_LOCK_logger,
@@ -8860,6 +8603,7 @@ static PSI_cond_info all_server_conds[]=
 PSI_thread_key key_thread_bootstrap, key_thread_handle_manager, key_thread_main,
   key_thread_one_connection, key_thread_signal_hand,
   key_thread_compress_gtid_table, key_thread_parser_service;
+PSI_thread_key key_thread_daemon_plugin;
 PSI_thread_key key_thread_timer_notifier;
 
 static PSI_thread_info all_server_threads[]=
@@ -8878,6 +8622,7 @@ static PSI_thread_info all_server_threads[]=
   { &key_thread_signal_hand, "signal_handler", PSI_FLAG_GLOBAL},
   { &key_thread_compress_gtid_table, "compress_gtid_table", PSI_FLAG_GLOBAL},
   { &key_thread_parser_service, "parser_service", PSI_FLAG_GLOBAL},
+  { &key_thread_daemon_plugin, "daemon_plugin", PSI_FLAG_GLOBAL}
 };
 
 PSI_file_key key_file_map;
@@ -9036,7 +8781,6 @@ PSI_stage_info stage_worker_waiting_for_its_turn_to_commit= { 0, "Waiting for pr
 PSI_stage_info stage_worker_waiting_for_commit_parent= { 0, "Waiting for dependent transaction to commit", 0};
 PSI_stage_info stage_suspending= { 0, "Suspending", 0};
 PSI_stage_info stage_starting= { 0, "starting", 0};
-PSI_stage_info stage_waiting_for_no_channel_reference= { 0, "Waiting for no channel reference.", 0};
 
 #ifdef HAVE_PSI_INTERFACE
 
@@ -9146,8 +8890,7 @@ PSI_stage_info *all_server_stages[]=
   & stage_worker_waiting_for_its_turn_to_commit,
   & stage_worker_waiting_for_commit_parent,
   & stage_suspending,
-  & stage_starting,
-  & stage_waiting_for_no_channel_reference
+  & stage_starting
 };
 
 PSI_socket_key key_socket_tcpip, key_socket_unix, key_socket_client_connection;
@@ -9373,7 +9116,6 @@ static PSI_memory_info all_server_memory[]=
   { &key_memory_Gtid_set_Interval_chunk, "Gtid_set::Interval_chunk", 0},
   { &key_memory_Owned_gtids_sidno_to_hash, "Owned_gtids::sidno_to_hash", 0},
   { &key_memory_Sid_map_Node, "Sid_map::Node", 0},
-  { &key_memory_Gtid_state_group_commit_sidno, "Gtid_state::group_commit_sidno_locks", 0},
   { &key_memory_Mutex_cond_array_Mutex_cond, "Mutex_cond_array::Mutex_cond", 0},
   { &key_memory_TABLE_RULE_ENT, "TABLE_RULE_ENT", 0},
 

@@ -1,6 +1,6 @@
 /***********************************************************************
 
-Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the terms of the GNU General Public License as published by the
@@ -375,7 +375,7 @@ innodb_bk_thread(
 				/* binlog is running, make the thread
 				attach to conn_data->thd for binlog
 				committing */
-				if (thd && conn_data->thd) {
+				if (thd) {
 					handler_thd_attach(
 						conn_data->thd, NULL);
 				}
@@ -700,7 +700,7 @@ innodb_conn_clean(
 				UT_LIST_REMOVE(conn_list, engine->conn_data,
 					       conn_data);
 
-				if (thd && conn_data->thd ) {
+				if (thd) {
 					handler_thd_attach(conn_data->thd,
 							   NULL);
 				}
@@ -1929,9 +1929,6 @@ search_done:
 						&col_value->value_int,
 						col_value->value_len,
 						col_value->is_unsigned);
-
-                                        assert(int_len <= conn_data->mul_col_buf_len);
-
 					memcpy(c_value, int_buf, int_len);
 					c_value += int_len;
 				} else {

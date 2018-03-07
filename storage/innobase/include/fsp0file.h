@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2013, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2013, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -53,6 +53,7 @@ public:
 		m_name(),
 		m_filepath(),
 		m_filename(),
+		m_handle(OS_FILE_CLOSED),
 		m_open_flags(OS_FILE_OPEN),
 		m_size(),
 		m_order(),
@@ -69,9 +70,7 @@ public:
 		m_encryption_key(NULL),
 		m_encryption_iv(NULL)
 	{
-
-		m_handle.m_file = OS_FILE_CLOSED;
-
+		/* No op */
 	}
 
 	Datafile(const char* name, ulint flags, ulint size, ulint order)
@@ -79,6 +78,7 @@ public:
 		m_name(mem_strdup(name)),
 		m_filepath(),
 		m_filename(),
+		m_handle(OS_FILE_CLOSED),
 		m_open_flags(OS_FILE_OPEN),
 		m_size(size),
 		m_order(order),
@@ -96,8 +96,7 @@ public:
 		m_encryption_iv(NULL)
 	{
 		ut_ad(m_name != NULL);
-		m_handle.m_file = OS_FILE_CLOSED;
-
+		/* No op */
 	}
 
 	Datafile(const Datafile& file)
@@ -147,7 +146,9 @@ public:
 
 		m_size = file.m_size;
 		m_order = file.m_order;
-		ut_a(m_handle.m_file == OS_FILE_CLOSED);
+		m_type = file.m_type;
+
+		ut_a(m_handle == OS_FILE_CLOSED);
 		m_handle = file.m_handle;
 
 		m_exists = file.m_exists;
@@ -201,7 +202,7 @@ public:
 					are enforced.
 	@return DB_SUCCESS or error code */
 	virtual dberr_t open_read_write(bool read_only_mode)
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
 
 	/** Initialize OS specific file info. */
 	void init_file_info();
@@ -245,7 +246,7 @@ public:
 		ulint		space_id,
 		ulint		flags,
 		bool		for_import)
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
 
 	/** Validates this datafile for the purpose of recovery.
 	The file should exist and be successfully opened. We initially
@@ -256,7 +257,7 @@ public:
 	@retval DB_SUCCESS if tablespace is valid, DB_ERROR if not.
 	m_is_valid is also set true on success, else false. */
 	dberr_t validate_for_recovery()
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
 
 	/** Checks the consistency of the first page of a datafile when the
 	tablespace is opened.  This occurs before the fil_space_t is created
@@ -270,7 +271,7 @@ public:
 	@retval DB_TABLESPACE_EXISTS if there is a duplicate space_id */
 	dberr_t validate_first_page(lsn_t*	flush_lsn,
 				    bool	for_import)
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
 
 	/** Get Datafile::m_name.
 	@return m_name */
@@ -288,7 +289,7 @@ public:
 
 	/** Get Datafile::m_handle.
 	@return m_handle */
-	pfs_os_file_t	handle()	const
+	os_file_t	handle()	const
 	{
 		return(m_handle);
 	}
@@ -318,7 +319,7 @@ public:
 	@return true if m_handle is open, false if not */
 	bool	is_open()	const
 	{
-		return(m_handle.m_file != OS_FILE_CLOSED);
+		return(m_handle != OS_FILE_CLOSED);
 	}
 
 	/** Get Datafile::m_is_valid.
@@ -370,7 +371,7 @@ private:
 					are enforced.
 	@return DB_SUCCESS or error code */
 	dberr_t open_or_create(bool read_only_mode)
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
 
 	/** Reads a few significant fields from the first page of the
 	datafile, which must already be open.
@@ -378,7 +379,7 @@ private:
 					are enforced.
 	@return DB_SUCCESS or DB_IO_ERROR if page cannot be read */
 	dberr_t read_first_page(bool read_first_page)
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
 
 	/** Free the first page from memory when it is no longer needed. */
 	void free_first_page();
@@ -427,7 +428,7 @@ private:
 	char*			m_filename;
 
 	/** Open file handle */
-	pfs_os_file_t		m_handle;
+	os_file_t		m_handle;
 
 	/** Flags to use for opening the data file */
 	os_file_create_t	m_open_flags;
@@ -555,7 +556,7 @@ public:
 					are enforced.
 	@return DB_SUCCESS or error code */
 	dberr_t open_read_write(bool read_only_mode)
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
 
 	/******************************************************************
 	Global Static Functions;  Cannot refer to data members.

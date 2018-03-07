@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -49,7 +49,6 @@
 #include "datadict.h"   // dd_frm_type()
 #include "sql_hset.h"   // Hash_set
 #include "sql_tmp_table.h" // free_tmp_table
-#include "sql_update.h" // records_are_comparable
 #include "table_cache.h" // Table_cache_manager, Table_cache
 #include "log.h"
 #include "binlog.h"
@@ -227,7 +226,6 @@ bool Strict_error_handler::handle_condition(THD *thd,
   case ER_CUT_VALUE_GROUP_CONCAT:
   case ER_DATETIME_FUNCTION_OVERFLOW:
   case ER_WARN_TOO_FEW_RECORDS:
-  case ER_WARN_TOO_MANY_RECORDS:
   case ER_INVALID_ARGUMENT_FOR_LOGARITHM:
   case ER_NUMERIC_JSON_VALUE_OUT_OF_RANGE:
   case ER_INVALID_JSON_VALUE_FOR_CAST:
@@ -503,7 +501,7 @@ size_t get_table_def_key(const TABLE_LIST *table_list, const char **key)
 *****************************************************************************/
 
 extern "C" uchar *table_def_key(const uchar *record, size_t *length,
-                               my_bool not_used MY_ATTRIBUTE((unused)))
+                               my_bool not_used __attribute__((unused)))
 {
   TABLE_SHARE *entry=(TABLE_SHARE*) record;
   *length= entry->table_cache_key.length;
@@ -768,8 +766,7 @@ TABLE_SHARE *get_table_share(THD *thd, TABLE_LIST *table_list,
   }
 
 #ifdef HAVE_PSI_TABLE_INTERFACE
-  share->m_psi=
-     PSI_TABLE_CALL(get_table_share)((share->tmp_table != NO_TMP_TABLE), share);
+  share->m_psi= PSI_TABLE_CALL(get_table_share)(false, share);
 #else
   share->m_psi= NULL;
 #endif
@@ -1516,23 +1513,6 @@ close_all_tables_for_name(THD *thd, TABLE_SHARE *share,
   }
 }
 
-/**
-  Performance Schema tables must be accessible independently of the LOCK TABLE
-  mode. These macros handle the special case of P_S tables being used under
-  LOCK TABLE mode.
-*/
-
-/* Check if we are under LOCK TABLE mode and not prelocking. */
-#define UNDER_LTM(thd) \
-  (thd->locked_tables_mode == LTM_LOCK_TABLES || \
-   thd->locked_tables_mode == LTM_PRELOCKED_UNDER_LOCK_TABLES)
-
-/* Check if the table belongs to the P_S, excluding setup and threads tables. */
-#define BELONGS_TO_P_S_UNDER_LTM(thd, tl) \
-   (UNDER_LTM(thd) && \
-    (!strcmp("performance_schema", tl->db) && \
-     strcmp(tl->table_name, "threads") && \
-     strstr(tl->table_name, "setup_") == NULL))
 
 /*
   Close all tables used by the current substatement, or all tables
@@ -1627,35 +1607,6 @@ void close_thread_tables(THD *thd)
 
   if (thd->locked_tables_mode)
   {
-    /* Close P_S tables opened implicilty under LOCK TABLE mode. */
-    if (UNDER_LTM(thd))
-    {
-      for (TABLE **prev= &thd->open_tables; *prev; )
-      {
-        TABLE *table= *prev;
-
-        /* Ignore tables locked explicitly by LOCK TABLE. */
-        if (!table->pos_in_locked_tables)
-        {
-          /* Close P_S tables unless the query is inside of a SP/trigger. */
-          if (!thd->in_sub_stmt &&
-              BELONGS_TO_P_S_UNDER_LTM(thd, table->pos_in_table_list))
-          {
-            if (!table->s->tmp_table)
-            {
-              table->file->ha_index_or_rnd_end();
-              table->set_keyread(FALSE);
-              table->open_by_handler= 0;
-              table->file->ha_external_lock(thd, F_UNLCK);
-              close_thread_table(thd, prev);
-              continue;
-            }
-          }
-
-        }
-        prev= &table->next;
-      }
-    }
 
     /* Ensure we are calling ha_reset() for all used tables */
     mark_used_tables_as_free_for_reuse(thd, thd->open_tables);
@@ -3031,15 +2982,14 @@ bool open_table(THD *thd, TABLE_LIST *table_list, Open_table_context *ot_ctx)
     TODO: move this block into a separate function.
   */
   if (thd->locked_tables_mode &&
-      !(flags & MYSQL_OPEN_GET_NEW_TABLE) &&
-      !BELONGS_TO_P_S_UNDER_LTM(thd, table_list))
-  {   // Using table locks
+      ! (flags & MYSQL_OPEN_GET_NEW_TABLE))
+  {						// Using table locks
     TABLE *best_table= 0;
     int best_distance= INT_MIN;
     for (table=thd->open_tables; table ; table=table->next)
     {
       if (table->s->table_cache_key.length == key_length &&
-          !memcmp(table->s->table_cache_key.str, key, key_length))
+	  !memcmp(table->s->table_cache_key.str, key, key_length))
       {
         if (!my_strcasecmp(system_charset_info, table->alias, alias) &&
             table->query_id != thd->query_id && /* skip tables already used */
@@ -3604,13 +3554,6 @@ table_found:
   }
 
   table->init(thd, table_list);
-
-  /* Request a read lock for implicitly opened P_S tables. */
-  if (BELONGS_TO_P_S_UNDER_LTM(thd, table_list) &&
-      table_list->table->file->get_lock_type() == F_UNLCK)
-  {
-    table_list->table->file->ha_external_lock(thd, F_RDLCK);
-  }
 
   DBUG_RETURN(FALSE);
 
@@ -5242,7 +5185,7 @@ end:
 }
 
 extern "C" uchar *schema_set_get_key(const uchar *record, size_t *length,
-                                     my_bool not_used MY_ATTRIBUTE((unused)))
+                                     my_bool not_used __attribute__((unused)))
 {
   TABLE_LIST *table=(TABLE_LIST*) record;
   *length= table->db_length;
@@ -6046,15 +5989,6 @@ handle_view(THD *thd, Query_tables_list *prelocking_ctx,
                                  &table_list->view_query()->sroutines_list,
                                  table_list->top_table());
   }
-
-  /*
-    If a trigger was defined on one of the associated tables then assign the
-    'trg_event_map' value of the view to the next table in table_list. When a
-    Stored function is invoked, all the associated tables including the tables
-    associated with the trigger are prelocked.
-  */
-  if (table_list->trg_event_map && table_list->next_global)
-    table_list->next_global->trg_event_map= table_list->trg_event_map;
   return FALSE;
 }
 
@@ -6427,15 +6361,8 @@ bool open_and_lock_tables(THD *thd, TABLE_LIST *tables, uint flags,
   /*
     open_and_lock_tables() must not be used to open system tables. There must
     be no active attachable transaction when open_and_lock_tables() is called.
-    Exception is made to the read-write attachables with explicitly specified
-    in the assert table.
-    Callers in the read-write case must make sure no side effect to
-    the global transaction state is inflicted when the attachable one
-    will commmit.
   */
-  DBUG_ASSERT(!thd->is_attachable_ro_transaction_active() &&
-              (!thd->is_attachable_rw_transaction_active() ||
-               !strcmp(tables->table_name, "gtid_executed")));
+  DBUG_ASSERT(!thd->is_attachable_transaction_active());
 
   if (open_tables(thd, &tables, &counter, flags, prelocking_strategy))
     goto err;
@@ -7176,10 +7103,7 @@ find_field_in_view(THD *thd, TABLE_LIST *table_list,
           Use own arena for Prepared Statements or data will be freed after
           PREPARE.
         */
-        Prepared_stmt_arena_holder ps_arena_holder(
-          thd,
-          register_tree_change &&
-            thd->stmt_arena->is_stmt_prepare_or_first_stmt_execute());
+        Prepared_stmt_arena_holder ps_arena_holder(thd, register_tree_change);
 
         /*
           create_item() may, or may not create a new Item, depending on
@@ -9416,7 +9340,6 @@ inline bool call_before_insert_triggers(THD *thd,
   before triggers.
 
   @param thd           thread context
-  @param optype_info   COPY_INFO structure used for default values handling
   @param fields        Item_fields list to be filled
   @param values        values to fill with
   @param table         TABLE-object holding list of triggers to be invoked
@@ -9433,8 +9356,7 @@ inline bool call_before_insert_triggers(THD *thd,
 */
 
 bool
-fill_record_n_invoke_before_triggers(THD *thd, COPY_INFO *optype_info,
-                                     List<Item> &fields,
+fill_record_n_invoke_before_triggers(THD *thd, List<Item> &fields,
                                      List<Item> &values, TABLE *table,
                                      enum enum_trigger_event_type event,
                                      int num_fields)
@@ -9458,14 +9380,6 @@ fill_record_n_invoke_before_triggers(THD *thd, COPY_INFO *optype_info,
       MY_BITMAP insert_into_fields_bitmap;
       bitmap_init(&insert_into_fields_bitmap, NULL, num_fields, false);
 
-      /*
-        Evaluate DEFAULT functions like CURRENT_TIMESTAMP.
-        COPY_INFO::set_function_defaults() causes store_timestamp to be called
-        on the columns that are not on the list of assigned_columns.
-      */
-      if (optype_info->function_defaults_apply_on_columns(table->write_set))
-        optype_info->set_function_defaults(table);
-
       rc= fill_record(thd, table, fields, values, NULL,
                       &insert_into_fields_bitmap);
 
@@ -9477,33 +9391,9 @@ fill_record_n_invoke_before_triggers(THD *thd, COPY_INFO *optype_info,
     }
     else
     {
-      rc= fill_record(thd, table, fields, values, NULL, NULL);
-
-      if (!rc)
-      {
-        /*
-          Unlike INSERT and LOAD, UPDATE operation requires comparison of old
-          and new records to determine whether function defaults have to be
-          evaluated.
-        */
-        if (optype_info->get_operation_type() == COPY_INFO::UPDATE_OPERATION)
-        {
-          /*
-            Evaluate function defaults for columns with ON UPDATE clause only
-            if any other column of the row is updated.
-          */
-          if ((!records_are_comparable(table) || compare_records(table)) &&
-              (optype_info->
-               function_defaults_apply_on_columns(table->write_set)))
-            optype_info->set_function_defaults(table);
-        }
-        else if(optype_info->
-                function_defaults_apply_on_columns(table->write_set))
-          optype_info->set_function_defaults(table);
-
-        rc= table->triggers->process_triggers(thd, event, TRG_ACTION_BEFORE,
-                                              true);
-      }
+      rc= fill_record(thd, table, fields, values, NULL, NULL) ||
+          table->triggers->process_triggers(thd, event, TRG_ACTION_BEFORE,
+                                            true);
     }
     /* 
       Re-calculate generated fields to cater for cases when base columns are 
@@ -10042,11 +9932,11 @@ bool open_trans_system_tables_for_read(THD *thd, TABLE_LIST *table_list)
 
   DBUG_ENTER("open_trans_system_tables_for_read");
 
-  DBUG_ASSERT(!thd->is_attachable_ro_transaction_active());
+  DBUG_ASSERT(!thd->is_attachable_transaction_active());
 
   // Begin attachable transaction.
 
-  thd->begin_attachable_ro_transaction();
+  thd->begin_attachable_transaction();
 
   // Open tables.
 

@@ -61,7 +61,6 @@
 #    [--let $rpl_group_replication= 1]
 #    [--let $rpl_gtid_utils= 1]
 #    [--let $rpl_set_gtid_next_anonymous_in_new_connection= 1]
-#    [--let $rpl_skip_log_bin= 1]
 #    --source include/rpl_init.inc
 #
 #    Parameters:
@@ -131,8 +130,7 @@
 #    $rpl_group_replication
 #      This checks for whether we have Group Replication enabled or not. Based
 #      on the check this parameter we execute change master or not in this
-#      inc file. Moreover, it also sets the default timeouts for the group
-#      replication tests.
+#      inc file.
 #
 #    $rpl_gtid_utils
 #      Create stored functions for GTID manipulation on every server (see
@@ -141,9 +139,6 @@
 #    $rpl_set_gtid_next_anonymous_in_new_connection
 #       Executes SET GTID_NEXT = 'ANONYMOUS' in each new connection.
 #
-#    $rpl_skip_log_bin
-#      Bypasses the binlog related checking to allow testing --skip-log-bin
-#      servers.
 #
 # ==== Side effects ====
 #
@@ -184,11 +179,9 @@
 #
 #
 
-if (!$rpl_skip_log_bin)
-{
-  # The default behaviour is to run the binlog checking
-  --source include/have_log_bin.inc
-}
+
+--source include/have_log_bin.inc
+
 
 --let $include_filename= rpl_init.inc [topology=$rpl_topology]
 --source include/begin_include_file.inc
@@ -281,13 +274,6 @@ if ($gtid_mode == 'ON')
 if ($group_replication_group_name == '')
 {
   --let $group_replication_group_name= `SELECT UUID()`
-}
-
-# if in group replication mode, set the default timeouts
-if($rpl_group_replication)
-{
-  # Reset default timeouts for the group replication tests
-  --source include/group_replication_timeouts.inc
 }
 
 while ($_rpl_server)

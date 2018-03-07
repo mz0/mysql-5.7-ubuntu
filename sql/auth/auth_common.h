@@ -1,7 +1,7 @@
 #ifndef AUTH_COMMON_INCLUDED
 #define AUTH_COMMON_INCLUDED
 
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,7 +21,6 @@
 #include "sql_string.h"                         /* String */
 #include "table.h"                              /* TABLE_LIST */
 #include "field.h"
-#include <set>
 
 /* Forward Declarations */
 class LEX_COLUMN;
@@ -237,56 +236,6 @@ enum mysql_user_table_field
   MYSQL_USER_FIELD_PASSWORD_LIFETIME,
   MYSQL_USER_FIELD_ACCOUNT_LOCKED,
   MYSQL_USER_FIELD_COUNT
-};
-
-enum mysql_proxies_priv_table_feild
-{
-  MYSQL_PROXIES_PRIV_FIELD_HOST = 0,
-  MYSQL_PROXIES_PRIV_FIELD_USER,
-  MYSQL_PROXIES_PRIV_FIELD_PROXIED_HOST,
-  MYSQL_PROXIES_PRIV_FIELD_PROXIED_USER,
-  MYSQL_PROXIES_PRIV_FIELD_WITH_GRANT,
-  MYSQL_PROXIES_PRIV_FIELD_GRANTOR,
-  MYSQL_PROXIES_PRIV_FIELD_TIMESTAMP,
-  MYSQL_PROXIES_PRIV_FIELD_COUNT
-};
-
-enum mysql_procs_priv_table_field
-{
-  MYSQL_PROCS_PRIV_FIELD_HOST = 0,
-  MYSQL_PROCS_PRIV_FIELD_DB,
-  MYSQL_PROCS_PRIV_FIELD_USER,
-  MYSQL_PROCS_PRIV_FIELD_ROUTINE_NAME,
-  MYSQL_PROCS_PRIV_FIELD_ROUTINE_TYPE,
-  MYSQL_PROCS_PRIV_FIELD_GRANTOR,
-  MYSQL_PROCS_PRIV_FIELD_PROC_PRIV,
-  MYSQL_PROCS_PRIV_FIELD_TIMESTAMP,
-  MYSQL_PROCS_PRIV_FIELD_COUNT
-};
-
-enum mysql_columns_priv_table_field
-{
-  MYSQL_COLUMNS_PRIV_FIELD_HOST = 0,
-  MYSQL_COLUMNS_PRIV_FIELD_DB,
-  MYSQL_COLUMNS_PRIV_FIELD_USER,
-  MYSQL_COLUMNS_PRIV_FIELD_TABLE_NAME,
-  MYSQL_COLUMNS_PRIV_FIELD_COLUMN_NAME,
-  MYSQL_COLUMNS_PRIV_FIELD_TIMESTAMP,
-  MYSQL_COLUMNS_PRIV_FIELD_COLUMN_PRIV,
-  MYSQL_COLUMNS_PRIV_FIELD_COUNT
-};
-
-enum mysql_tables_priv_table_field
-{
-  MYSQL_TABLES_PRIV_FIELD_HOST = 0,
-  MYSQL_TABLES_PRIV_FIELD_DB,
-  MYSQL_TABLES_PRIV_FIELD_USER,
-  MYSQL_TABLES_PRIV_FIELD_TABLE_NAME,
-  MYSQL_TABLES_PRIV_FIELD_GRANTOR,
-  MYSQL_TABLES_PRIV_FIELD_TIMESTAMP,
-  MYSQL_TABLES_PRIV_FIELD_TABLE_PRIV,
-  MYSQL_TABLES_PRIV_FIELD_COLUMN_PRIV,
-  MYSQL_TABLES_PRIV_FIELD_COUNT
 };
 
 /* When we run mysql_upgrade we must make sure that the server can be run
@@ -600,8 +549,7 @@ bool acl_check_host(const char *host, const char *ip);
 #define ACCOUNT_LOCK_ATTR       (1L << 6)    /* update account lock status */
 
 /* rewrite CREATE/ALTER/GRANT user */
-void mysql_rewrite_create_alter_user(THD *thd, String *rlb,
-                                     std::set<LEX_USER *> *extra_users= NULL);
+void mysql_rewrite_create_alter_user(THD *thd, String *rlb);
 void mysql_rewrite_grant(THD *thd, String *rlb);
 
 /* sql_user */
@@ -620,8 +568,7 @@ bool mysql_rename_user(THD *thd, List <LEX_USER> &list);
 bool set_and_validate_user_attributes(THD *thd,
                                       LEX_USER *Str,
                                       ulong &what_to_set,
-                                      bool is_privileged_user,
-                                      const char * cmd);
+                                      bool is_privileged_user);
 
 /* sql_auth_cache */
 int wild_case_compare(CHARSET_INFO *cs, const char *str,const char *wildstr);
@@ -696,7 +643,6 @@ bool lock_tables_precheck(THD *thd, TABLE_LIST *tables);
 bool create_table_precheck(THD *thd, TABLE_LIST *tables,
                            TABLE_LIST *create_table);
 bool check_fk_parent_table_access(THD *thd,
-                                  const char *child_table_db,
                                   HA_CREATE_INFO *create_info,
                                   Alter_info *alter_info);
 bool check_readonly(THD *thd, bool err_if_readonly);

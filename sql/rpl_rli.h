@@ -1,4 +1,4 @@
-/* Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -231,13 +231,6 @@ public:
   uint32 cur_log_old_open_count;
 
   /*
-    If on init_info() call error_on_rli_init_info is true that means
-    that previous call to init_info() terminated with an error, RESET
-    SLAVE must be executed and the problem fixed manually.
-   */
-  bool error_on_rli_init_info;
-
-  /*
     Let's call a group (of events) :
       - a transaction
       or
@@ -302,16 +295,6 @@ public:
     gtid_set.ensure_sidno(sidno);
     gtid_set._add_gtid(sidno, gno);
   }
-
-  /**
-    Adds a GTID set to received GTID set.
-
-    @param gtid_set the gtid_set to add
-
-    @return RETURN_STATUS_OK or RETURN_STATUS_REPORTED_ERROR.
-  */
-  enum_return_status add_gtid_set(const Gtid_set *gtid_set);
-
   const Gtid_set *get_gtid_set() const { return &gtid_set; }
 
   int init_relay_log_pos(const char* log,
@@ -394,7 +377,9 @@ public:
     UNTIL_SQL_AFTER_GTIDS,
     UNTIL_SQL_AFTER_MTS_GAPS,
     UNTIL_SQL_VIEW_ID,
+#ifndef DBUG_OFF
     UNTIL_DONE
+#endif
   } until_condition;
   char until_log_name[FN_REFLEN];
   ulonglong until_log_pos;
@@ -504,11 +489,10 @@ public:
   int inc_group_relay_log_pos(ulonglong log_pos,
                               bool need_data_lock);
 
-  int wait_for_pos(THD* thd, String* log_name, longlong log_pos,
-                   double timeout);
-  int wait_for_gtid_set(THD* thd, String* gtid, double timeout);
-  int wait_for_gtid_set(THD* thd, const Gtid_set* wait_gtid_set,
-                        double timeout);
+  int wait_for_pos(THD* thd, String* log_name, longlong log_pos, 
+		   longlong timeout);
+  int wait_for_gtid_set(THD* thd, String* gtid, longlong timeout);
+  int wait_for_gtid_set(THD* thd, const Gtid_set* wait_gtid_set, longlong timeout);
 
   void close_temporary_tables();
 
@@ -1103,11 +1087,6 @@ public:
   */
   bool reported_unsafe_warning;
 
-  /*
-    'sql_thread_kill_accepted is set to TRUE when killed status is recognized.
-  */
-  bool sql_thread_kill_accepted;
-
   time_t get_row_stmt_start_timestamp()
   {
     return row_stmt_start_timestamp;
@@ -1270,6 +1249,12 @@ private:
   time_t row_stmt_start_timestamp;
   bool long_find_row_note_printed;
 
+  /*
+    If on init_info() call error_on_rli_init_info is true that means
+    that previous call to init_info() terminated with an error, RESET
+    SLAVE must be executed and the problem fixed manually.
+   */
+  bool error_on_rli_init_info;
 
  /**
    sets the suffix required for relay log names
@@ -1293,15 +1278,14 @@ private:
 
 public:
   /*
-    The boolean is set to true when the binlog (rli_fake) or slave
-    (rli_slave) applier thread detaches any engine ha_data
-    it has dealt with at time of XA START processing.
-    The boolean is reset to false at the end of XA PREPARE,
-    XA COMMIT ONE PHASE for the binlog applier, and
-    at internal rollback of the slave applier at the same time with
-    the engine ha_data re-attachment.
+    The boolean is set to true when the binlog applier (rli_fake) thread
+    detaches any "native" engine transactions it has dealt with
+    at time of XA START processing.
+    The boolean is reset to false at the end of XA PREPARE
+    and XA COMMIT ONE PHASE, at the same time with the native transactions
+    re-attachment.
   */
-  bool is_engine_ha_data_detached;
+  bool is_native_trx_detached;
 
   void set_thd_tx_priority(int priority)
   {
@@ -1311,30 +1295,6 @@ public:
   int get_thd_tx_priority()
   {
     return thd_tx_priority;
-  }
-  /**
-    Detaches the engine ha_data from THD. The fact
-    is memorized in @c is_engine_ha_detached flag.
-
-    @param  thd a reference to THD
-  */
-  void detach_engine_ha_data(THD *thd);
-  /**
-    Drops the engine ha_data flag when it is up.
-    The method is run at execution points of the engine ha_data
-    re-attachment.
-
-    @return true   when THD has detached the engine ha_data,
-            false  otherwise
-  */
-  bool unflag_detached_engine_ha_data()
-  {
-    bool rc= false;
-
-    if (is_engine_ha_data_detached)
-      rc= !(is_engine_ha_data_detached= false); // return the old value
-
-    return rc;
   }
 };
 

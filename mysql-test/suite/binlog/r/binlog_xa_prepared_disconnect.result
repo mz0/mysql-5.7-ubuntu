@@ -1,4 +1,3 @@
-CALL mtr.add_suppression("Statement is unsafe because it is being used inside a XA transaction");
 include/gtid_utils.inc
 RESET MASTER;
 CREATE VIEW v_processlist  as SELECT * FROM performance_schema.threads where type = 'FOREGROUND';
@@ -918,9 +917,9 @@ master-bin.000001	#	Query	#	#	XA COMMIT X'7472785f37',X'',1
 master-bin.000001	#	Query	#	#	XA COMMIT X'7472785f38',X'',1
 master-bin.000001	#	Query	#	#	XA COMMIT X'7472785f39',X'',1
 master-bin.000001	#	Stop	#	#	
-include/assert.inc [committed gno 131]
+include/assert.inc [committed gno 130]
 RESET MASTER;
-include/assert.inc [committed gno 131]
+include/assert.inc [committed gno 130]
 All transactions must be completed, to empty-list the following:
 XA RECOVER;
 formatID	gtrid_length	bqual_length	data
@@ -929,7 +928,6 @@ XA START 'xa1';
 INSERT INTO t SET a = 1;
 XA END 'xa1';
 SET @@SESSION.pseudo_slave_mode=1;
-ERROR HY000: The system variable pseudo_slave_mode cannot be set when there is an ongoing transaction.
 XA PREPARE 'xa1';
 # restart
 XA ROLLBACK 'xa1';
@@ -938,7 +936,6 @@ INSERT INTO t SET a = 1;
 XA END 'xa1';
 XA PREPARE 'xa1';
 SET @@SESSION.pseudo_slave_mode=1;
-ERROR HY000: The system variable pseudo_slave_mode cannot be set when there is an ongoing transaction.
 XA COMMIT 'xa1';
 DROP TABLE t;
 include/gtid_utils_end.inc

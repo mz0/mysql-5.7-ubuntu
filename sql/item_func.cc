@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -477,22 +477,6 @@ void Item_func::update_used_tables()
     with_subselect|= args[i]->has_subquery();
     with_stored_program|= args[i]->has_stored_program();
   }
-}
-
-
-void Item_func_sp::fix_after_pullout(SELECT_LEX *parent_select,
-                                     SELECT_LEX *removed_select)
-{
-  Item_func::fix_after_pullout(parent_select, removed_select);
-
-  /*
-    Prevents function from being evaluated before it is locked.
-    @todo - make this dependent on READS SQL or MODIFIES SQL.
-            Due to a limitation in how functions are evaluated, we need to
-            ensure that we are in a prelocked mode even though the function
-            doesn't reference any tables.
-  */
-  used_tables_cache|= PARAM_TABLE_BIT;
 }
 
 
@@ -2380,7 +2364,6 @@ my_decimal *Item_func_mod::decimal_op(my_decimal *decimal_value)
     return decimal_value;
   case E_DEC_DIV_ZERO:
     signal_divide_by_null();
-    // Fall through.
   default:
     null_value= 1;
     return 0;
@@ -2583,7 +2566,6 @@ Item_func_latlongfromgeohash::check_geohash_argument_valid_type(Item *item)
   {
   case MYSQL_TYPE_VARCHAR:
   case MYSQL_TYPE_VAR_STRING:
-  case MYSQL_TYPE_STRING:
   case MYSQL_TYPE_BLOB:
   case MYSQL_TYPE_TINY_BLOB:
   case MYSQL_TYPE_MEDIUM_BLOB:
@@ -4875,23 +4857,7 @@ longlong Item_master_pos_wait::val_int()
 #ifdef HAVE_REPLICATION
   Master_info *mi;
   longlong pos = (ulong)args[1]->val_int();
-  double timeout = (arg_count >= 3) ? args[2]->val_real() : 0;
-  if (timeout < 0)
-  {
-    if (thd->is_strict_mode())
-    {
-      my_error(ER_WRONG_ARGUMENTS, MYF(0), "MASTER_POS_WAIT.");
-    }
-    else
-    {
-      push_warning_printf(thd, Sql_condition::SL_WARNING,
-                          ER_WRONG_ARGUMENTS,
-                          ER(ER_WRONG_ARGUMENTS),
-                          "MASTER_POS_WAIT.");
-      null_value= 1;
-    }
-    return 0;
-  }
+  longlong timeout = (arg_count>=3) ? args[2]->val_int() : 0 ;
 
   channel_map.rdlock();
 
@@ -4918,9 +4884,6 @@ longlong Item_master_pos_wait::val_int()
       mi= channel_map.get_default_channel_mi();
   }
 
-  if (mi != NULL)
-    mi->inc_reference();
-
   channel_map.unlock();
 
   if (mi == NULL ||
@@ -4929,9 +4892,6 @@ longlong Item_master_pos_wait::val_int()
     null_value = 1;
     event_count=0;
   }
-
-  if (mi != NULL)
-    mi->dec_reference();
 #endif
   return event_count;
 }
@@ -5013,25 +4973,7 @@ longlong Item_wait_for_executed_gtid_set::val_int()
 
   gtid_state->begin_gtid_wait(GTID_MODE_LOCK_SID);
 
-  double timeout = (arg_count == 2) ? args[1]->val_real() : 0;
-  if (timeout < 0)
-  {
-    if (thd->is_strict_mode())
-    {
-      my_error(ER_WRONG_ARGUMENTS, MYF(0), "WAIT_FOR_EXECUTED_GTID_SET.");
-    }
-    else
-    {
-      push_warning_printf(thd, Sql_condition::SL_WARNING,
-                          ER_WRONG_ARGUMENTS,
-                          ER(ER_WRONG_ARGUMENTS),
-                          "WAIT_FOR_EXECUTED_GTID_SET.");
-      null_value= 1;
-    }
-    gtid_state->end_gtid_wait();
-    global_sid_lock->unlock();
-    DBUG_RETURN(0);
-  }
+  longlong timeout= (arg_count== 2) ? args[1]->val_int() : 0;
 
   bool result= gtid_state->wait_for_gtid_set(thd, &wait_for_gtid_set, timeout);
   global_sid_lock->unlock();
@@ -5064,23 +5006,7 @@ longlong Item_master_gtid_set_wait::val_int()
   String *gtid= args[0]->val_str(&value);
   THD* thd = current_thd;
   Master_info *mi= NULL;
-  double timeout = (arg_count >= 2) ? args[1]->val_real() : 0;
-  if (timeout < 0)
-  {
-    if (thd->is_strict_mode())
-    {
-      my_error(ER_WRONG_ARGUMENTS, MYF(0), "WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS.");
-    }
-    else
-    {
-      push_warning_printf(thd, Sql_condition::SL_WARNING,
-                          ER_WRONG_ARGUMENTS,
-                          ER(ER_WRONG_ARGUMENTS),
-                          "WAIT_UNTIL_SQL_THREAD_AFTER_GTIDS.");
-      null_value= 1;
-    }
-    DBUG_RETURN(0);
-  }
+  longlong timeout = (arg_count>= 2) ? args[1]->val_int() : 0;
 
   if (thd->slave_thread || !gtid)
   {
@@ -5123,9 +5049,6 @@ longlong Item_master_gtid_set_wait::val_int()
   }
   gtid_state->begin_gtid_wait(GTID_MODE_LOCK_CHANNEL_MAP);
 
-  if (mi)
-    mi->inc_reference();
-
   channel_map.unlock();
 
   if (mi && mi->rli)
@@ -5142,9 +5065,6 @@ longlong Item_master_gtid_set_wait::val_int()
       Replication has not been set up, we should return NULL;
      */
     null_value = 1;
-
-  if (mi != NULL)
-    mi->dec_reference();
 #endif
 
   gtid_state->end_gtid_wait();
@@ -5303,7 +5223,7 @@ struct User_level_lock
 /** Extract a hash key from User_level_lock. */
 
 uchar *ull_get_key(const uchar *ptr, size_t *length,
-                   my_bool not_used MY_ATTRIBUTE((unused)))
+                   my_bool not_used __attribute__((unused)))
 {
   const User_level_lock *ull = reinterpret_cast<const User_level_lock*>(ptr);
   const MDL_key *key = ull->ticket->get_key();
@@ -6421,7 +6341,6 @@ String *user_var_entry::val_str(my_bool *null_value, String *str,
   case STRING_RESULT:
     if (str->copy(m_ptr, m_length, collation.collation))
       str= 0;					// EOM error
-    break;
   case ROW_RESULT:
     DBUG_ASSERT(1);				// Impossible
     break;
@@ -7947,20 +7866,14 @@ bool Item_func_match::fix_fields(THD *thd, Item **ref)
     */
     if (doc_id_field)
       update_table_read_set(doc_id_field);
+    /*
+      Prevent index only accces by non-FTS index if table does not have
+      FTS_DOC_ID column, find_relevance does not work properly without
+      FTS_DOC_ID value. Decision for FTS index about index only access
+      is made later by JOIN::fts_index_access() function.
+    */
     else
-    {
-      /* read_set needs to be updated for MATCH arguments */
-      for (uint i= 0; i < arg_count; i++)
-        update_table_read_set(((Item_field*)args[i])->field);
-      /*
-        Prevent index only accces by non-FTS index if table does not have
-        FTS_DOC_ID column, find_relevance does not work properly without
-        FTS_DOC_ID value. Decision for FTS index about index only access
-        is made later by JOIN::fts_index_access() function.
-      */
       table->covering_keys.clear_all();
-    }
-
   }
   else
   {
@@ -8837,6 +8750,8 @@ Item_func_sp::fix_fields(THD *thd, Item **ref)
 
   /* These is reset/set by Item_func::fix_fields. */
   with_stored_program= true;
+  if (!m_sp->m_chistics->detistic || !tables_locked_cache)
+    const_item_cache= false;
 
   if (res)
     DBUG_RETURN(res);
@@ -8873,6 +8788,9 @@ Item_func_sp::fix_fields(THD *thd, Item **ref)
 void Item_func_sp::update_used_tables()
 {
   Item_func::update_used_tables();
+
+  if (!m_sp->m_chistics->detistic)
+    const_item_cache= false;
 
   /* This is reset by Item_func::update_used_tables(). */
   with_stored_program= true;

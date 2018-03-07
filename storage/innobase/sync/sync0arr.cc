@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2015, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2008, Google Inc.
 
 Portions of this file contain modifications contributed and copyrighted by
@@ -584,18 +584,17 @@ sync_array_cell_print(
 		}
 
 		fprintf(file,
-			"number of readers " ULINTPF
-			", waiters flag " ULINTPF
-			", lock_word: %lx\n"
+			"number of readers %lu, waiters flag %lu,"
+			" lock_word: %lx\n"
 			"Last time read locked in file %s line %lu\n"
 			"Last time write locked in file %s line %lu\n",
-			rw_lock_get_reader_count(rwlock),
-			rwlock->waiters,
-			static_cast<ulong>(rwlock->lock_word),
+			(ulong) rw_lock_get_reader_count(rwlock),
+			(ulong) rwlock->waiters,
+			rwlock->lock_word,
 			innobase_basename(rwlock->last_s_file_name),
-			static_cast<ulong>(rwlock->last_s_line),
+			(ulong) rwlock->last_s_line,
 			rwlock->last_x_file_name,
-			static_cast<ulong>(rwlock->last_x_line));
+			(ulong) rwlock->last_x_line);
 	} else {
 		ut_error;
 	}

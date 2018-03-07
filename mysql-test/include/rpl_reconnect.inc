@@ -62,10 +62,6 @@ if ($rpl_server_number == 1)
 
     if ($rpl_group_replication)
     {
-      --let $rpl_connection_name= server1
-      --source include/rpl_connection.inc
-      --enable_reconnect
-
       --let $rpl_connection_name= server_1
       --source include/rpl_connection.inc
       --enable_reconnect
@@ -87,10 +83,6 @@ if ($rpl_server_number == 2)
 
     if ($rpl_group_replication)
     {
-      --let $rpl_connection_name= server2
-      --source include/rpl_connection.inc
-      --enable_reconnect
-
       --let $rpl_connection_name= server_2
       --source include/rpl_connection.inc
       --enable_reconnect
@@ -139,10 +131,6 @@ if ($rpl_server_number == 1)
 
     if ($rpl_group_replication)
     {
-      --let $rpl_connection_name= server1
-      --source include/rpl_connection.inc
-      --enable_reconnect
-
       --let $rpl_connection_name= server_1
       --source include/rpl_connection.inc
       --source include/wait_until_connected_again.inc
@@ -167,10 +155,6 @@ if ($rpl_server_number == 2)
 
     if ($rpl_group_replication)
     {
-      --let $rpl_connection_name= server2
-      --source include/rpl_connection.inc
-      --enable_reconnect
-
       --let $rpl_connection_name= server_2
       --source include/rpl_connection.inc
       --source include/wait_until_connected_again.inc

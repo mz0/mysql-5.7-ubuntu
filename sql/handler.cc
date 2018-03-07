@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -88,9 +88,8 @@
           case PSI_BATCH_MODE_NONE:                           \
           {                                                   \
             PSI_table_locker *sub_locker= NULL;               \
-            PSI_table_locker_state reentrant_safe_state;      \
             sub_locker= PSI_TABLE_CALL(start_table_io_wait)   \
-              (& reentrant_safe_state, m_psi, OP, INDEX,      \
+              (& m_psi_locker_state, m_psi, OP, INDEX,        \
                __FILE__, __LINE__);                           \
             PAYLOAD                                           \
             if (sub_locker != NULL)                           \
@@ -481,7 +480,7 @@ redo:
   if ((plugin= ha_resolve_by_name_raw(thd, cstring_name)))
   {
     handlerton *hton= plugin_data<handlerton*>(plugin);
-    if (hton && !(hton->flags & HTON_NOT_USER_SELECTABLE))
+    if (!(hton->flags & HTON_NOT_USER_SELECTABLE))
       return plugin;
       
     /*
@@ -1371,16 +1370,6 @@ void trans_register_ha(THD *thd, bool all, handlerton *ht_arg,
   Ha_trx_info *knownn_trans= trn_ctx->ha_trx_info(trx_scope);
   if (all)
   {
-    /*
-      Ensure no active backup engine data exists, unless the current transaction
-      is from replication and in active xa state.
-    */
-    DBUG_ASSERT(thd->ha_data[ht_arg->slot].ha_ptr_backup == NULL ||
-                (thd->get_transaction()->xid_state()->
-                 has_state(XID_STATE::XA_ACTIVE)));
-    DBUG_ASSERT(thd->ha_data[ht_arg->slot].ha_ptr_backup == NULL ||
-                (thd->is_binlog_applier() || thd->slave_thread));
-
     thd->server_status|= SERVER_STATUS_IN_TRANS;
     if (thd->tx_read_only)
       thd->server_status|= SERVER_STATUS_IN_TRANS_READONLY;
@@ -1442,17 +1431,6 @@ int ha_prepare(THD *thd)
   {
     const Ha_trx_info *ha_info= trn_ctx->ha_trx_info(
       Transaction_ctx::SESSION);
-    bool gtid_error= false, need_clear_owned_gtid= false;
-
-    if ((gtid_error=
-         MY_TEST(commit_owned_gtids(thd, true, &need_clear_owned_gtid))))
-    {
-      DBUG_ASSERT(need_clear_owned_gtid);
-
-      ha_rollback_trans(thd, true);
-      error= 1;
-      goto err;
-    }
 
     while (ha_info)
     {
@@ -1479,12 +1457,6 @@ int ha_prepare(THD *thd)
       }
       ha_info= ha_info->next();
     }
-
-    DBUG_ASSERT(thd->get_transaction()->xid_state()->
-                has_state(XID_STATE::XA_IDLE));
-
-err:
-    gtid_state_commit_or_rollback(thd, need_clear_owned_gtid, !gtid_error);
   }
 
   DBUG_RETURN(error);
@@ -1552,92 +1524,6 @@ ha_check_and_coalesce_trx_read_only(THD *thd, Ha_trx_info *ha_list,
 
 
 /**
-  The function computes condition to call gtid persistor wrapper,
-  and executes it.
-  It is invoked at committing a statement or transaction, including XA,
-  and also at XA prepare handling.
-
-  @param thd  Thread context.
-  @param all  The execution scope, true for the transaction one, false
-              for the statement one.
-  @param[out] need_clear_owned_gtid_ptr
-              A pointer to bool variable to return the computed decision
-              value.
-  @return zero as no error indication, non-zero otherwise
-*/
-
-int commit_owned_gtids(THD *thd, bool all, bool *need_clear_owned_gtid_ptr)
-{
-  DBUG_ENTER("commit_owned_gtids(...)");
-  int error= 0;
-
-  if ((!opt_bin_log || (thd->slave_thread && !opt_log_slave_updates)) &&
-      (all || !thd->in_multi_stmt_transaction_mode()) &&
-      !thd->is_operating_gtid_table_implicitly &&
-      !thd->is_operating_substatement_implicitly)
-  {
-    /*
-      If the binary log is disabled for this thread (either by
-      log_bin=0 or sql_log_bin=0 or by log_slave_updates=0 for a
-      slave thread), then the statement will not be written to
-      the binary log. In this case, we should save its GTID into
-      mysql.gtid_executed table and @@GLOBAL.GTID_EXECUTED as it
-      did when binlog is enabled.
-    */
-    if (thd->owned_gtid.sidno > 0)
-    {
-      error= gtid_state->save(thd);
-      *need_clear_owned_gtid_ptr= true;
-    }
-    else if (thd->owned_gtid.sidno == THD::OWNED_SIDNO_ANONYMOUS)
-      *need_clear_owned_gtid_ptr= true;
-  }
-  else
-  {
-    *need_clear_owned_gtid_ptr= false;
-  }
-
-  DBUG_RETURN(error);
-}
-
-
-/**
-  The function is a wrapper of commit_owned_gtids(...). It is invoked
-  at committing a partially failed statement or transaction.
-
-  @param thd  Thread context.
-
-  @retval -1 if error when persisting owned gtid.
-  @retval 0 if succeed to commit owned gtid.
-  @retval 1 if do not meet conditions to commit owned gtid.
-*/
-int commit_owned_gtid_by_partial_command(THD *thd)
-{
-  DBUG_ENTER("commit_owned_gtid_by_partial_command(THD *thd)");
-  bool need_clear_owned_gtid_ptr= false;
-  int ret= 0;
-
-  if (commit_owned_gtids(thd, true, &need_clear_owned_gtid_ptr))
-  {
-    /* Error when saving gtid into mysql.gtid_executed table. */
-    gtid_state->update_on_rollback(thd);
-    ret= -1;
-  }
-  else if (need_clear_owned_gtid_ptr)
-  {
-    gtid_state->update_on_commit(thd);
-    ret= 0;
-  }
-  else
-  {
-    ret= 1;
-  }
-
-  DBUG_RETURN(ret);
-}
-
-
-/**
   @param[in] ignore_global_read_lock   Allow commit to complete even if a
                                        global read lock is active. This can be
                                        used to allow changes to internal tables
@@ -1666,7 +1552,15 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock)
     if binlog is disabled, or binlog is enabled and log_slave_updates
     is disabled with slave SQL thread or slave worker thread.
   */
-  error= commit_owned_gtids(thd, all, &need_clear_owned_gtid);
+  if ((!opt_bin_log || (thd->slave_thread && !opt_log_slave_updates)) &&
+      (all || !thd->in_multi_stmt_transaction_mode()) &&
+      thd->owned_gtid.sidno > 0 &&
+      !thd->is_operating_gtid_table_implicitly &&
+      !thd->is_operating_substatement_implicitly)
+  {
+    error= gtid_state->save(thd);
+    need_clear_owned_gtid= true;
+  }
 
   /*
     'all' means that this is either an explicit commit issued by
@@ -1769,8 +1663,7 @@ int ha_commit_trans(THD *thd, bool all, bool ignore_global_read_lock)
       DEBUG_SYNC(thd, "ha_commit_trans_after_acquire_commit_lock");
     }
 
-    if (rw_trans && stmt_has_updated_trans_table(ha_info)
-        && check_readonly(thd, true))
+    if (rw_trans && check_readonly(thd, true))
     {
       ha_rollback_trans(thd, all);
       error= 1;
@@ -1875,22 +1768,23 @@ int ha_commit_low(THD *thd, bool all, bool run_after_commit)
   Transaction_ctx::enum_trx_scope trx_scope=
     all ? Transaction_ctx::SESSION : Transaction_ctx::STMT;
   Ha_trx_info *ha_info= trn_ctx->ha_trx_info(trx_scope), *ha_info_next;
+  bool restore_backup_trx= false;
 
   DBUG_ENTER("ha_commit_low");
 
   if (ha_info)
   {
-    bool restore_backup_ha_data= false;
     /*
-      At execution of XA COMMIT ONE PHASE binlog or slave applier
-      reattaches the engine ha_data to THD, previously saved at XA START.
+      binlog applier thread can execute XA COMMIT and it would
+      have to restore its local thread native transaction
+      context, previously saved at XA START.
     */
-    if (all && thd->rpl_unflag_detached_engine_ha_data())
+    if (thd->lex->sql_command == SQLCOM_XA_COMMIT &&
+        thd->binlog_applier_has_detached_trx())
     {
-      DBUG_ASSERT(thd->lex->sql_command == SQLCOM_XA_COMMIT);
       DBUG_ASSERT(static_cast<Sql_cmd_xa_commit*>(thd->lex->m_sql_cmd)->
                   get_xa_opt() == XA_ONE_PHASE);
-      restore_backup_ha_data= true;
+      restore_backup_trx= true;
     }
 
     for (; ha_info; ha_info= ha_info_next)
@@ -1904,8 +1798,14 @@ int ha_commit_low(THD *thd, bool all, bool run_after_commit)
       }
       thd->status_var.ha_commit_count++;
       ha_info_next= ha_info->next();
-      if (restore_backup_ha_data)
-        reattach_engine_ha_data_to_thd(thd, ht);
+
+      if (restore_backup_trx && ht->replace_native_transaction_in_thd)
+      {
+        void **trx_backup= thd_ha_data_backup(thd, ht);
+
+        ht->replace_native_transaction_in_thd(thd, *trx_backup, NULL);
+        *trx_backup= NULL;
+      }
       ha_info->reset(); /* keep it conveniently zero-filled */
     }
     trn_ctx->reset_scope(trx_scope);
@@ -1952,19 +1852,6 @@ int ha_rollback_low(THD *thd, bool all)
 
   if (ha_info)
   {
-    bool restore_backup_ha_data= false;
-    /*
-      Similarly to the commit case, the binlog or slave applier
-      reattaches the engine ha_data to THD.
-    */
-    if (all && thd->rpl_unflag_detached_engine_ha_data())
-    {
-      DBUG_ASSERT(trn_ctx->xid_state()->get_state() != XID_STATE::XA_NOTR ||
-                  thd->killed == THD::KILL_CONNECTION);
-
-      restore_backup_ha_data= true;
-    }
-
     for (; ha_info; ha_info= ha_info_next)
     {
       int err;
@@ -1976,8 +1863,6 @@ int ha_rollback_low(THD *thd, bool all)
       }
       thd->status_var.ha_rollback_count++;
       ha_info_next= ha_info->next();
-      if (restore_backup_ha_data)
-        reattach_engine_ha_data_to_thd(thd, ht);
       ha_info->reset(); /* keep it conveniently zero-filled */
     }
     trn_ctx->reset_scope(trx_scope);
@@ -1986,22 +1871,8 @@ int ha_rollback_low(THD *thd, bool all)
   /*
     Thanks to possibility of MDL deadlock rollback request can come even if
     transaction hasn't been started in any transactional storage engine.
-
-    It is possible to have a call of ha_rollback_low() while handling
-    failure from ha_prepare() and an error in Daignostics_area still
-    wasn't set. Therefore it is required to check that an error in
-    Diagnostics_area is set before calling the method XID_STATE::set_error().
-
-    If it wasn't done it would lead to failure of the assertion
-      DBUG_ASSERT(m_status == DA_ERROR)
-    in the method Diagnostics_area::mysql_errno().
-
-    In case ha_prepare is failed and an error wasn't set in Diagnostics_area
-    the error ER_XA_RBROLLBACK is set in the Diagnostics_area from
-    the method Sql_cmd_xa_prepare::trans_xa_prepare() when non-zero result code
-    returned by ha_prepare() is handled.
   */
-  if (all && thd->transaction_rollback_request && thd->is_error())
+  if (all && thd->transaction_rollback_request)
     trn_ctx->xid_state()->set_error(thd);
 
   (void) RUN_HOOK(transaction, after_rollback, (thd, all));
@@ -2128,7 +1999,7 @@ int ha_commit_attachable(THD *thd)
   Ha_trx_info *ha_info_next;
 
   /* This function only handles attachable transactions. */
-  DBUG_ASSERT(thd->is_attachable_ro_transaction_active());
+  DBUG_ASSERT(thd->is_attachable_transaction_active());
   /*
     Since the attachable transaction is AUTOCOMMIT we only need
     to care about statement transaction.
@@ -2618,8 +2489,7 @@ int ha_delete_table(THD *thd, handlerton *table_type, const char *path,
 #ifdef HAVE_PSI_TABLE_INTERFACE
   if (likely(error == 0))
   {
-    /* Table share not available, so check path for temp_table prefix. */
-    bool temp_table= (strstr(path, tmp_file_prefix) != NULL);
+    my_bool temp_table= (my_bool)is_prefix(alias, tmp_file_prefix);
     PSI_TABLE_CALL(drop_table_share)
       (temp_table, db, strlen(db), alias, strlen(alias));
   }
@@ -4314,7 +4184,7 @@ int handler::check_old_types()
     if (table->s->mysql_version == 0) // prior to MySQL 5.0
     {
       /* check for bad DECIMAL field */
-      if ((*field)->type() == MYSQL_TYPE_NEWDECIMAL)
+      if ((*field)->type() == MYSQL_TYPE_NEWDECIMAL) // TODO: error? MYSQL_TYPE_DECIMAL?
       {
         return HA_ADMIN_NEEDS_ALTER;
       }
@@ -4323,19 +4193,6 @@ int handler::check_old_types()
         return HA_ADMIN_NEEDS_ALTER;
       }
     }
-
-    /*
-      Check for old DECIMAL field.
-
-      Above check does not take into account for pre 5.0 decimal types which can
-      be present in the data directory if user did in-place upgrade from
-      mysql-4.1 to mysql-5.0.
-    */
-    if ((*field)->type() == MYSQL_TYPE_DECIMAL)
-    {
-      return HA_ADMIN_NEEDS_DUMP_UPGRADE;
-    }
-
     if ((*field)->type() == MYSQL_TYPE_YEAR && (*field)->field_length == 2)
       return HA_ADMIN_NEEDS_ALTER; // obsolete YEAR(2) type
 
@@ -4595,9 +4452,7 @@ int handler::ha_repair(THD* thd, HA_CHECK_OPT* check_opt)
   DBUG_ASSERT(result == HA_ADMIN_NOT_IMPLEMENTED ||
               ha_table_flags() & HA_CAN_REPAIR);
 
-  int old_types_error= check_old_types();
-
-  if (old_types_error != HA_ADMIN_NEEDS_DUMP_UPGRADE && result == HA_ADMIN_OK)
+  if (result == HA_ADMIN_OK)
     result= update_frm_version(table);
   return result;
 }
@@ -5090,12 +4945,12 @@ int ha_create_table(THD *thd, const char *path,
   char name_buff[FN_REFLEN];
   const char *name;
   TABLE_SHARE share;
-#ifdef HAVE_PSI_TABLE_INTERFACE
-  bool temp_table = is_temp_table ||
-    (create_info->options & HA_LEX_CREATE_TMP_TABLE) ||
-    (strstr(path, tmp_file_prefix) != NULL);
-#endif
   DBUG_ENTER("ha_create_table");
+#ifdef HAVE_PSI_TABLE_INTERFACE
+  my_bool temp_table= (my_bool)is_temp_table ||
+               (my_bool)is_prefix(table_name, tmp_file_prefix) ||
+               (create_info->options & HA_LEX_CREATE_TMP_TABLE ? TRUE : FALSE);
+#endif
   
   init_tmp_table_share(thd, &share, db, 0, table_name, path);
   if (open_table_def(thd, &share, 0))
@@ -6814,7 +6669,7 @@ end:
 ha_rows DsMrr_impl::dsmrr_info(uint keyno, uint n_ranges, uint rows,
                                uint *bufsz, uint *flags, Cost_estimate *cost)
 {
-  ha_rows res MY_ATTRIBUTE((unused));
+  ha_rows res __attribute__((unused));
   uint def_flags= *flags;
   uint def_bufsz= *bufsz;
 
@@ -7218,14 +7073,10 @@ void get_sweep_read_cost(TABLE *table, ha_rows nrows, bool interrupted,
 
     DBUG_PRINT("info",("sweep: nblocks=%g, busy_blocks=%g", n_blocks,
                        busy_blocks));
-    /*
-      The random access cost for reading the data pages will be the upper
-      limit for the sweep_cost.
-    */
-    cost->add_io(cost_model->page_read_cost(busy_blocks));
-    if (!interrupted)
+    if (interrupted)
+      cost->add_io(cost_model->page_read_cost(busy_blocks));
+    else
     {
-      Cost_estimate sweep_cost;
       /*
         Assume reading pages from disk is done in one 'sweep'. 
 
@@ -7241,7 +7092,7 @@ void get_sweep_read_cost(TABLE *table, ha_rows nrows, bool interrupted,
       DBUG_ASSERT(busy_blocks_disk >= 0.0);
 
       // Cost of accessing blocks in main memory buffer
-      sweep_cost.add_io(cost_model->buffer_block_read_cost(busy_blocks_mem));
+      cost->add_io(cost_model->buffer_block_read_cost(busy_blocks_mem));
 
       // Cost of reading blocks from disk in a 'sweep'
       const double seek_distance= (busy_blocks_disk > 1.0) ?
@@ -7249,17 +7100,7 @@ void get_sweep_read_cost(TABLE *table, ha_rows nrows, bool interrupted,
 
       const double disk_cost=
         busy_blocks_disk * cost_model->disk_seek_cost(seek_distance);
-      sweep_cost.add_io(disk_cost);
-
-      /*
-        For some cases, ex: when only few blocks need to be read and the
-        seek distance becomes very large, the sweep cost model can produce
-        a cost estimate that is larger than the cost of random access.
-        To handle this case, we use the sweep cost only when it is less
-        than the random access cost.
-      */
-      if (sweep_cost < *cost)
-        *cost= sweep_cost;
+      cost->add_io(disk_cost);
     }
   }
   DBUG_PRINT("info",("returning cost=%g", cost->total_cost()));
@@ -7451,60 +7292,6 @@ int handler::compare_key_icp(const key_range *range) const
     cmp= key_compare_result_on_equal;
   if (range_scan_direction == RANGE_SCAN_DESC)
     cmp= -cmp;
-  return cmp;
-}
-
-/**
-  Change the offsets of all the fields in a key range.
-
-  @param range	  the key range
-  @param key_part the first key part
-  @param diff	  how much to change the offsets with
-*/
-static inline void
-move_key_field_offsets(const key_range *range, const KEY_PART_INFO *key_part,
-		       my_ptrdiff_t diff)
-{
-  for (size_t len= 0; len < range->length;
-       len+= key_part->store_length, ++key_part)
-    key_part->field->move_field_offset(diff);
-}
-
-/**
-  Check if the key in the given buffer (which is not necessarily
-  TABLE::record[0]) is within range. Called by the storage engine to
-  avoid reading too many rows.
-
-  @param buf  the buffer that holds the key
-  @retval -1 if the key is within the range
-  @retval  0 if the key is equal to the end_range key, and
-             key_compare_result_on_equal is 0
-  @retval  1 if the key is outside the range
-*/
-int handler::compare_key_in_buffer(const uchar *buf) const
-{
-  DBUG_ASSERT(end_range != NULL);
-
-  /*
-    End range on descending scans is only checked with ICP for now, and then we
-    check it with compare_key_icp() instead of this function.
-  */
-  DBUG_ASSERT(range_scan_direction == RANGE_SCAN_ASC);
-
-  // Make the fields in the key point into the buffer instead of record[0].
-  const my_ptrdiff_t diff= buf - table->record[0];
-  if (diff != 0)
-    move_key_field_offsets(end_range, range_key_part, diff);
-
-  // Compare the key in buf against end_range.
-  int cmp= key_cmp(range_key_part, end_range->key, end_range->length);
-  if (cmp == 0)
-    cmp= key_compare_result_on_equal;
-
-  // Reset the field offsets.
-  if (diff != 0)
-    move_key_field_offsets(end_range, range_key_part, -diff);
-
   return cmp;
 }
 
@@ -8295,7 +8082,6 @@ static bool my_eval_gcolumn_expr_helper(THD *thd, TABLE *table,
 {
   DBUG_ENTER("my_eval_gcolumn_expr_helper");
   DBUG_ASSERT(table && table->vfield);
-  DBUG_ASSERT(!thd->is_error());
 
   uchar *old_buf= table->record[0];
   repoint_field_to_record(table, old_buf, record);
@@ -8416,6 +8202,11 @@ bool handler::my_prepare_gcolumn_template(THD *thd,
                                           my_gcolumn_template_callback_t myc,
                                           void* ib_table)
 {
+  /*
+    This is a background thread, so we can re-initialize the main LEX, its
+    current content is not important.
+  */
+  DBUG_ASSERT(thd->system_thread == SYSTEM_THREAD_BACKGROUND);
   char path[FN_REFLEN + 1];
   bool was_truncated;
   build_table_filename(path, sizeof(path) - 1 - reg_ext_length,
@@ -8467,6 +8258,7 @@ bool handler::my_eval_gcolumn_expr_with_open(THD *thd,
                                              const MY_BITMAP *const fields,
                                              uchar *record)
 {
+  DBUG_ASSERT(thd->system_thread == SYSTEM_THREAD_BACKGROUND);
   bool retval= true;
   lex_start(thd);
 
@@ -8527,17 +8319,9 @@ bool handler::my_eval_gcolumn_expr(THD *thd, TABLE *table,
 
 struct HTON_NOTIFY_PARAMS
 {
-  HTON_NOTIFY_PARAMS(const MDL_key *mdl_key,
-                     ha_notification_type mdl_type)
-    : key(mdl_key), notification_type(mdl_type),
-      some_htons_were_notified(false),
-      victimized(false)
-  {}
-
   const MDL_key *key;
   const ha_notification_type notification_type;
   bool some_htons_were_notified;
-  bool victimized;
 };
 
 
@@ -8550,8 +8334,7 @@ notify_exclusive_mdl_helper(THD *thd, plugin_ref plugin, void *arg)
     HTON_NOTIFY_PARAMS *params= reinterpret_cast<HTON_NOTIFY_PARAMS*>(arg);
 
     if (hton->notify_exclusive_mdl(thd, params->key,
-                                   params->notification_type,
-                                   &params->victimized))
+                                   params->notification_type))
     {
       // Ignore failures from post event notification.
       if (params->notification_type == HA_NOTIFY_PRE_EVENT)
@@ -8574,8 +8357,6 @@ notify_exclusive_mdl_helper(THD *thd, plugin_ref plugin, void *arg)
                             lock is to be acquired/was released.
   @param notification_type  Indicates whether this is pre-acquire or
                             post-release notification.
-  @param victimized        'true' if locking failed as we were selected
-                            as a victim in order to avoid possible deadlocks.
 
   @note @see handlerton::notify_exclusive_mdl for details about
         calling convention and error reporting.
@@ -8585,15 +8366,12 @@ notify_exclusive_mdl_helper(THD *thd, plugin_ref plugin, void *arg)
 */
 
 bool ha_notify_exclusive_mdl(THD *thd, const MDL_key *mdl_key,
-                             ha_notification_type notification_type,
-                             bool *victimized)
+                             ha_notification_type notification_type)
 {
-  HTON_NOTIFY_PARAMS params(mdl_key, notification_type);
-  *victimized = false;
+  HTON_NOTIFY_PARAMS params = {mdl_key, notification_type, false};
   if (plugin_foreach(thd, notify_exclusive_mdl_helper,
                      MYSQL_STORAGE_ENGINE_PLUGIN, &params))
   {
-    *victimized = params.victimized;
     /*
       If some SE hasn't given its permission to acquire lock and some SEs
       has given their permissions, we need to notify the latter group about
@@ -8603,7 +8381,8 @@ bool ha_notify_exclusive_mdl(THD *thd, const MDL_key *mdl_key,
     if (notification_type == HA_NOTIFY_PRE_EVENT &&
         params.some_htons_were_notified)
     {
-      HTON_NOTIFY_PARAMS rollback_params(mdl_key, HA_NOTIFY_POST_EVENT);
+      HTON_NOTIFY_PARAMS rollback_params = {mdl_key, HA_NOTIFY_POST_EVENT,
+                                            false};
       (void) plugin_foreach(thd, notify_exclusive_mdl_helper,
                             MYSQL_STORAGE_ENGINE_PLUGIN, &rollback_params);
     }
@@ -8654,7 +8433,7 @@ notify_alter_table_helper(THD *thd, plugin_ref plugin, void *arg)
 bool ha_notify_alter_table(THD *thd, const MDL_key *mdl_key,
                            ha_notification_type notification_type)
 {
-  HTON_NOTIFY_PARAMS params(mdl_key, notification_type);
+  HTON_NOTIFY_PARAMS params = {mdl_key, notification_type, false};
 
   if (plugin_foreach(thd, notify_alter_table_helper,
                      MYSQL_STORAGE_ENGINE_PLUGIN, &params))
@@ -8668,64 +8447,12 @@ bool ha_notify_alter_table(THD *thd, const MDL_key *mdl_key,
     if (notification_type == HA_NOTIFY_PRE_EVENT &&
         params.some_htons_were_notified)
     {
-      HTON_NOTIFY_PARAMS rollback_params(mdl_key, HA_NOTIFY_POST_EVENT);
+      HTON_NOTIFY_PARAMS rollback_params = {mdl_key, HA_NOTIFY_POST_EVENT,
+                                            false};
       (void) plugin_foreach(thd, notify_alter_table_helper,
                             MYSQL_STORAGE_ENGINE_PLUGIN, &rollback_params);
     }
     return true;
-  }
-  return false;
-}
-
-/**
-  Set the transaction isolation level for the next transaction and update
-  session tracker information about the transaction isolation level.
-
-  @param thd           THD session setting the tx_isolation.
-  @param tx_isolation  The isolation level to be set.
-  @param one_shot      True if the isolation level should be restored to
-                       session default after finishing the transaction.
-*/
-bool set_tx_isolation(THD *thd,
-                      enum_tx_isolation tx_isolation,
-                      bool one_shot)
-{
-  Transaction_state_tracker *tst= NULL;
-
-  if (thd->variables.session_track_transaction_info > TX_TRACK_NONE)
-    tst= (Transaction_state_tracker *)
-           thd->session_tracker.get_tracker(TRANSACTION_INFO_TRACKER);
-
-  thd->tx_isolation= tx_isolation;
-
-  if (one_shot)
-  {
-    DBUG_ASSERT(!thd->in_active_multi_stmt_transaction());
-    DBUG_ASSERT(!thd->in_sub_stmt);
-    enum enum_tx_isol_level l;
-    switch (thd->tx_isolation) {
-    case ISO_READ_UNCOMMITTED:
-      l=  TX_ISOL_UNCOMMITTED;
-      break;
-    case ISO_READ_COMMITTED:
-      l=  TX_ISOL_COMMITTED;
-      break;
-    case ISO_REPEATABLE_READ:
-      l= TX_ISOL_REPEATABLE;
-      break;
-    case ISO_SERIALIZABLE:
-      l= TX_ISOL_SERIALIZABLE;
-      break;
-    default:
-      DBUG_ASSERT(0);
-      return true;
-    }
-    if (tst)
-      tst->set_isol_level(thd, l);
-  }
-  else if (tst)
-  {
-    tst->set_isol_level(thd, TX_ISOL_INHERIT);
   }
   return false;
 }

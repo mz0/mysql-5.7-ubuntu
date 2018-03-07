@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,7 +27,7 @@
 
 C_MODE_START
 
-#define NNN MY_ATTRIBUTE((unused))
+#define NNN __attribute__((unused))
 
 static void register_mutex_noop(const char *category NNN,
                                 PSI_mutex_info *info NNN,
@@ -471,14 +471,6 @@ static void end_file_close_wait_noop(PSI_file_locker *locker NNN,
   return;
 }
 
-static void end_file_rename_wait_noop(PSI_file_locker *locker NNN,
-                                      const char *old_name NNN,
-                                      const char *new_name NNN,
-                                      int result NNN)
-{
-  return;
-}
-
 static PSI_stage_progress*
 start_stage_noop(PSI_stage_key key NNN,
                  const char *src_file NNN, int src_line NNN)
@@ -745,12 +737,6 @@ execute_prepare_stmt_noop(PSI_statement_locker *locker NNN,
   return;
 }
 
-static void set_prepared_stmt_text_noop(PSI_prepared_stmt *prepared_stmt NNN,
-                                        const char *text NNN, uint text_len NNN)
-{
-  return;
-}
-
 void
 destroy_prepared_stmt_noop(PSI_prepared_stmt *prepared_stmt NNN)
 {
@@ -777,9 +763,9 @@ digest_end_noop(PSI_digest_locker *locker NNN,
 }
 
 static int
-set_thread_connect_attrs_noop(const char *buffer MY_ATTRIBUTE((unused)),
-                             uint length  MY_ATTRIBUTE((unused)),
-                             const void *from_cs MY_ATTRIBUTE((unused)))
+set_thread_connect_attrs_noop(const char *buffer __attribute__((unused)),
+                             uint length  __attribute__((unused)),
+                             const void *from_cs __attribute__((unused)))
 {
   return 0;
 }
@@ -826,13 +812,11 @@ static void register_memory_noop(const char *category NNN,
 
 static PSI_memory_key memory_alloc_noop(PSI_memory_key key NNN, size_t size NNN, struct PSI_thread ** owner NNN)
 {
-  *owner= NULL;
   return PSI_NOT_INSTRUMENTED;
 }
 
 static PSI_memory_key memory_realloc_noop(PSI_memory_key key NNN, size_t old_size NNN, size_t new_size NNN, struct PSI_thread ** owner NNN)
 {
-  *owner= NULL;
   return PSI_NOT_INSTRUMENTED;
 }
 
@@ -962,7 +946,6 @@ static PSI PSI_noop=
   end_file_wait_noop,
   start_file_close_wait_noop,
   end_file_close_wait_noop,
-  end_file_rename_wait_noop,
   start_stage_noop,
   get_current_stage_progress_noop,
   end_stage_noop,
@@ -1006,7 +989,6 @@ static PSI PSI_noop=
   destroy_prepared_stmt_noop,
   reprepare_prepared_stmt_noop,
   execute_prepare_stmt_noop,
-  set_prepared_stmt_text_noop,
   digest_start_noop,
   digest_end_noop,
   set_thread_connect_attrs_noop,

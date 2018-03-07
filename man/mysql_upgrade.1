@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: \fBmysql_upgrade\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 12/26/2017
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/01/2016
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.7
 .\"  Language: English
 .\"
-.TH "\FBMYSQL_UPGRADE\FR" "1" "12/26/2017" "MySQL 5\&.7" "MySQL Database System"
+.TH "\FBMYSQL_UPGRADE\FR" "1" "02/01/2016" "MySQL 5\&.7" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -27,6 +27,9 @@
 .\" -----------------------------------------------------------------
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
+.\" mysql_upgrade
+.\" upgrading MySQL
+.\" MySQL: upgrading
 .SH "NAME"
 mysql_upgrade \- check and upgrade MySQL tables
 .SH "SYNOPSIS"
@@ -42,7 +45,7 @@ also upgrades the system tables so that you can take advantage of new privileges
 If
 \fBmysql_upgrade\fR
 finds that a table has a possible incompatibility, it performs a table check and, if problems are found, attempts a table repair\&. If the table cannot be repaired, see
-Section\ \&2.11.3, \(lqRebuilding or Repairing Tables or Indexes\(rq
+Section\ \&2.11.4, \(lqRebuilding or Repairing Tables or Indexes\(rq
 for manual table repair strategies\&.
 .PP
 You should execute
@@ -62,47 +65,6 @@ client programs to perform the required operations\&. For the older implementati
 is included in the server RPM but requires the client RPM because the latter includes
 \fBmysqlcheck\fR\&. (See
 Section\ \&2.5.5, \(lqInstalling MySQL on Linux Using RPM Packages from Oracle\(rq\&.)
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBImportant\fR
-.ps -1
-.br
-.PP
-As of MySQL 5\&.7\&.12, the default
-\fB\-\-early\-plugin\-load\fR
-value is empty\&. To load the
-keyring_file
-plugin, you must use an explicit
-\fB\-\-early\-plugin\-load\fR
-option with a nonempty value\&.
-.PP
-In MySQL 5\&.7\&.11, the default
-\fB\-\-early\-plugin\-load\fR
-value was the name of the
-keyring_file
-plugin library file, so that plugin was loaded by default\&.
-InnoDB
-tablespace encryption requires the
-keyring_file
-plugin to be loaded prior to
-InnoDB
-initialization, so this change of default value introduces an incompatibility for upgrades from 5\&.7\&.11 to 5\&.7\&.12 or higher\&. Administrators who have encrypted
-InnoDB
-tablespaces must take explicit action to ensure continued loading of the
-keyring_file
-plugin: Start the server with an
-\fB\-\-early\-plugin\-load\fR
-option that names the plugin library file\&. For additional information, see
-Section\ \&6.5.4, \(lqThe MySQL Keyring\(rq\&.
-.sp .5v
-.RE
 .if n \{\
 .sp
 .\}
@@ -165,12 +127,6 @@ Section\ \&2.11.1, \(lqUpgrading MySQL\(rq, for instructions on determining whet
 .sp .5v
 .RE
 .PP
-Running
-\fBmysql_upgrade\fR
-is not recommended with a MySQL Server that is running with global transaction identifiers (GTIDs) enabled\&. This is because
-\fBmysql_upgrade\fR
-can make changes to system tables that use the MyISAM storage engine, which is non\-transactional\&.
-.PP
 To use
 \fBmysql_upgrade\fR, make sure that the server is running\&. Then invoke it like this to check and repair tables and to upgrade the system tables:
 .sp
@@ -220,6 +176,9 @@ Section\ \&13.7.2.2, \(lqCHECK TABLE Syntax\(rq)\&.
 All checked and repaired tables are marked with the current MySQL version number\&. This ensures that next time you run
 \fBmysql_upgrade\fR
 with the same version of the server, it can tell whether there is any need to check or repair the table again\&.
+.\" mysql_upgrade_info file: mysql_upgrade
+.\" mysql_upgrade: mysql_upgrade_info file
+.\" data directory: mysql_upgrade_info file
 .PP
 \fBmysql_upgrade\fR
 also saves the MySQL version number in a file named
@@ -242,14 +201,16 @@ depending on the hash format of the
 Password
 column value\&. As of MySQL 5\&.7\&.5, support for pre\-4\&.1 password hashing and
 mysql_old_password
-was removed, so
+is removed, so
 \fBmysql_upgrade\fR
 sets empty
 plugin
 values to
 \*(Aqmysql_native_password\*(Aq
-if the credentials use a hash format compatible with that plugin\&. Rows with a pre\-4\&.1 password hash must be upgraded manually\&. For account upgrade instructions, see
-Section\ \&6.5.1.3, \(lqMigrating Away from Pre-4.1 Password Hashing and the mysql_old_password Plugin\(rq\&.
+if the
+Password
+column uses a hash format compatible with that plugin\&. Rows with a pre\-4\&.1 password hash must be upgraded manually\&. For account upgrade instructions, see
+Section\ \&6.3.9.3, \(lqMigrating Away from Pre-4.1 Password Hashing and the mysql_old_password Plugin\(rq\&.
 .PP
 \fBmysql_upgrade\fR
 does not upgrade the contents of the help tables\&. For upgrade instructions, see
@@ -382,6 +343,8 @@ Section\ \&4.2.6, \(lqUsing Option Files\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: help option
+.\" help option: mysql_upgrade
 \fB\-\-help\fR
 .sp
 Display a short help message and exit\&.
@@ -395,6 +358,8 @@ Display a short help message and exit\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: basedir option
+.\" basedir option: mysql_upgrade
 \fB\-\-basedir=\fR\fB\fIdir_name\fR\fR
 .sp
 The path to the MySQL installation directory\&. This option was removed in MySQL 5\&.7\&.2\&.
@@ -408,6 +373,8 @@ The path to the MySQL installation directory\&. This option was removed in MySQL
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: bind-address option
+.\" bind-address option: mysql_upgrade
 \fB\-\-bind\-address=\fR\fB\fIip_address\fR\fR
 .sp
 On a computer having multiple network interfaces, use this option to select which interface to use for connecting to the MySQL server\&. This option was added in MySQL 5\&.7\&.5\&.
@@ -421,6 +388,8 @@ On a computer having multiple network interfaces, use this option to select whic
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: character-sets-dir option
+.\" character-sets-dir option: mysql_upgrade
 \fB\-\-character\-sets\-dir=\fR\fB\fIdir_name\fR\fR
 .sp
 The directory where character sets are installed\&. See
@@ -435,6 +404,8 @@ Section\ \&10.5, \(lqCharacter Set Configuration\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: compress option
+.\" compress option: mysql_upgrade
 \fB\-\-compress\fR,
 \fB\-C\fR
 .sp
@@ -451,6 +422,8 @@ form of this option was added in MySQL 5\&.7\&.5\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: datadir option
+.\" datadir option: mysql_upgrade
 \fB\-\-datadir=\fR\fB\fIdir_name\fR\fR
 .sp
 The path to the data directory\&. This option was removed in MySQL 5\&.7\&.2\&.
@@ -464,6 +437,8 @@ The path to the data directory\&. This option was removed in MySQL 5\&.7\&.2\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: debug option
+.\" debug option: mysql_upgrade
 \fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
 \fB\-# [\fR\fB\fIdebug_options\fR\fR\fB]\fR
 .sp
@@ -482,6 +457,8 @@ d:t:O,/tmp/mysql_upgrade\&.trace\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: debug-check option
+.\" debug-check option: mysql_upgrade
 \fB\-\-debug\-check\fR
 .sp
 Print some debugging information when the program exits\&.
@@ -495,6 +472,8 @@ Print some debugging information when the program exits\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: debug-info option
+.\" debug-info option: mysql_upgrade
 \fB\-\-debug\-info\fR,
 \fB\-T\fR
 .sp
@@ -509,10 +488,12 @@ Print debugging information and memory and CPU usage statistics when the program
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: default-auth option
+.\" default-auth option: mysql_upgrade
 \fB\-\-default\-auth=\fR\fB\fIplugin\fR\fR
 .sp
 A hint about the client\-side authentication plugin to use\&. See
-Section\ \&6.3.9, \(lqPluggable Authentication\(rq\&.
+Section\ \&6.3.8, \(lqPluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -523,6 +504,8 @@ Section\ \&6.3.9, \(lqPluggable Authentication\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: default-character-set option
+.\" default-character-set option: mysql_upgrade
 \fB\-\-default\-character\-set=\fR\fB\fIcharset_name\fR\fR
 .sp
 Use
@@ -539,6 +522,8 @@ Section\ \&10.5, \(lqCharacter Set Configuration\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: defaults-extra-file option
+.\" defaults-extra-file option: mysql_upgrade
 \fB\-\-defaults\-extra\-file=\fR\fB\fIfile_name\fR\fR
 .sp
 Read this option file after the global option file but (on Unix) before the user option file\&. If the file does not exist or is otherwise inaccessible, an error occurs\&.
@@ -554,6 +539,8 @@ is interpreted relative to the current directory if given as a relative path nam
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: defaults-file option
+.\" defaults-file option: mysql_upgrade
 \fB\-\-defaults\-file=\fR\fB\fIfile_name\fR\fR
 .sp
 Use only the given option file\&. If the file does not exist or is otherwise inaccessible, an error occurs\&.
@@ -569,6 +556,8 @@ is interpreted relative to the current directory if given as a relative path nam
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: defaults-group-suffix option
+.\" defaults-group-suffix option: mysql_upgrade
 \fB\-\-defaults\-group\-suffix=\fR\fB\fIstr\fR\fR
 .sp
 Read not only the usual option groups, but also groups with the usual names and a suffix of
@@ -597,6 +586,8 @@ groups\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: force option
+.\" force option: mysql_upgrade
 \fB\-\-force\fR
 .sp
 Ignore the
@@ -614,6 +605,8 @@ has already been executed for the current version of MySQL\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: host option
+.\" host option: mysql_upgrade
 \fB\-\-host=\fR\fB\fIhost_name\fR\fR,
 \fB\-h \fR\fB\fIhost_name\fR\fR
 .sp
@@ -628,6 +621,8 @@ Connect to the MySQL server on the given host\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: login-path option
+.\" login-path option: mysql_upgrade
 \fB\-\-login\-path=\fR\fB\fIname\fR\fR
 .sp
 Read options from the named login path in the
@@ -648,6 +643,8 @@ utility\&. See
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: max-allowed-packet option
+.\" max-allowed-packet option: mysql_upgrade
 \fB\-\-max\-allowed\-packet=\fR\fB\fIvalue\fR\fR
 .sp
 The maximum size of the buffer for client/server communication\&. The default value is 24MB\&. The minimum and maximum values are 4KB and 2GB\&. This option was added in MySQL 5\&.7\&.5\&.
@@ -661,6 +658,8 @@ The maximum size of the buffer for client/server communication\&. The default va
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: net-buffer-length option
+.\" net-buffer-length option: mysql_upgrade
 \fB\-\-net\-buffer\-length=\fR\fB\fIvalue\fR\fR
 .sp
 The initial size of the buffer for client/server communication\&. The default value is 1MB − 1KB\&. The minimum and maximum values are 4KB and 16MB\&. This option was added in MySQL 5\&.7\&.5\&.
@@ -674,6 +673,8 @@ The initial size of the buffer for client/server communication\&. The default va
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: no-defaults option
+.\" no-defaults option: mysql_upgrade
 \fB\-\-no\-defaults\fR
 .sp
 Do not read any option files\&. If program startup fails due to reading unknown options from an option file,
@@ -699,6 +700,8 @@ utility\&. See
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: password option
+.\" password option: mysql_upgrade
 \fB\-\-password[=\fR\fB\fIpassword\fR\fR\fB]\fR,
 \fB\-p[\fR\fB\fIpassword\fR\fR\fB]\fR
 .sp
@@ -726,6 +729,8 @@ Section\ \&6.1.2.1, \(lqEnd-User Guidelines for Password Security\(rq\&. You can
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: pipe option
+.\" pipe option: mysql_upgrade
 \fB\-\-pipe\fR,
 \fB\-W\fR
 .sp
@@ -740,6 +745,8 @@ On Windows, connect to the server using a named pipe\&. This option applies only
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: plugin-dir option
+.\" plugin-dir option: mysql_upgrade
 \fB\-\-plugin\-dir=\fR\fB\fIdir_name\fR\fR
 .sp
 The directory in which to look for plugins\&. Specify this option if the
@@ -747,7 +754,7 @@ The directory in which to look for plugins\&. Specify this option if the
 option is used to specify an authentication plugin but
 \fBmysql_upgrade\fR
 does not find it\&. See
-Section\ \&6.3.9, \(lqPluggable Authentication\(rq\&.
+Section\ \&6.3.8, \(lqPluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -758,6 +765,8 @@ Section\ \&6.3.9, \(lqPluggable Authentication\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: port option
+.\" port option: mysql_upgrade
 \fB\-\-port=\fR\fB\fIport_num\fR\fR,
 \fB\-P \fR\fB\fIport_num\fR\fR
 .sp
@@ -772,6 +781,8 @@ The TCP/IP port number to use for the connection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: print-defaults option
+.\" print-defaults option: mysql_upgrade
 \fB\-\-print\-defaults\fR
 .sp
 Print the program name and all options that it gets from option files\&.
@@ -785,6 +796,8 @@ Print the program name and all options that it gets from option files\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: protocol option
+.\" protocol option: mysql_upgrade
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
 The connection protocol to use for connecting to the server\&. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want\&. For details on the permissible values, see
@@ -799,10 +812,12 @@ Section\ \&4.2.2, \(lqConnecting to the MySQL Server\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: shared-memory-base-name option
+.\" shared-memory-base-name option: mysql_upgrade
 \fB\-\-shared\-memory\-base\-name=\fR\fB\fIname\fR\fR
 .sp
 On Windows, the shared\-memory name to use, for connections made using shared memory to a local server\&. The default value is
-MYSQL\&. The shared\-memory name is case\-sensitive\&.
+MYSQL\&. The shared\-memory name is case sensitive\&.
 .sp
 The server must be started with the
 \fB\-\-shared\-memory\fR
@@ -817,6 +832,8 @@ option to enable shared\-memory connections\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: skip-sys-schema option
+.\" skip-sys-schema option: mysql_upgrade
 \fB\-\-skip\-sys\-schema\fR
 .sp
 As of MySQL 5\&.7\&.7,
@@ -836,6 +853,8 @@ option suppresses this behavior\&. This option was added in MySQL 5\&.7\&.7\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: socket option
+.\" socket option: mysql_upgrade
 \fB\-\-socket=\fR\fB\fIpath\fR\fR,
 \fB\-S \fR\fB\fIpath\fR\fR
 .sp
@@ -851,12 +870,14 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: SSL options
+.\" SSL options: mysql_upgrade
 \fB\-\-ssl*\fR
 .sp
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server using SSL and indicate where to find SSL keys and certificates\&. See
-Section\ \&6.4.2, \(lqCommand Options for Encrypted Connections\(rq\&.
+Section\ \&6.3.12.5, \(lqCommand Options for Secure Connections\(rq\&.
 .RE
 .sp
 .RS 4
@@ -867,10 +888,12 @@ Section\ \&6.4.2, \(lqCommand Options for Encrypted Connections\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: tls-version option
+.\" tls-version option: mysql_upgrade
 \fB\-\-tls\-version=\fR\fB\fIprotocol_list\fR\fR
 .sp
 The protocols permitted by the client for encrypted connections\&. The value is a comma\-separated list containing one or more protocol names\&. The protocols that can be named for this option depend on the SSL library used to compile MySQL\&. For details, see
-Section\ \&6.4.6, \(lqEncrypted Connection Protocols and Ciphers\(rq\&.
+Section\ \&6.3.12.3, \(lqSecure Connection Protocols and Ciphers\(rq\&.
 .sp
 This option was added in MySQL 5\&.7\&.10\&.
 .RE
@@ -883,6 +906,8 @@ This option was added in MySQL 5\&.7\&.10\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: tmpdir option
+.\" tmpdir option: mysql_upgrade
 \fB\-\-tmpdir=\fR\fB\fIdir_name\fR\fR,
 \fB\-t \fR\fB\fIdir_name\fR\fR
 .sp
@@ -897,6 +922,8 @@ The path name of the directory to use for creating temporary files\&. This optio
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: upgrade-system-tables option
+.\" upgrade-system-tables option: mysql_upgrade
 \fB\-\-upgrade\-system\-tables\fR,
 \fB\-s\fR
 .sp
@@ -911,6 +938,8 @@ Upgrade only the system tables, do not upgrade data\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: user option
+.\" user option: mysql_upgrade
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
 \fB\-u \fR\fB\fIuser_name\fR\fR
 .sp
@@ -926,6 +955,8 @@ root\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: verbose option
+.\" verbose option: mysql_upgrade
 \fB\-\-verbose\fR
 .sp
 Verbose mode\&. Print more information about what the program does\&.
@@ -939,6 +970,8 @@ Verbose mode\&. Print more information about what the program does\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: version-check option
+.\" version-check option: mysql_upgrade
 \fB\-\-version\-check\fR,
 \fB\-k\fR
 .sp
@@ -960,6 +993,8 @@ exits\&. This option is enabled by default; to disable the check, use
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysql_upgrade: write-binlog option
+.\" write-binlog option: mysql_upgrade
 \fB\-\-write\-binlog\fR
 .sp
 By default, binary logging by
@@ -967,11 +1002,20 @@ By default, binary logging by
 is disabled\&. Invoke the program with
 \fB\-\-write\-binlog\fR
 if you want its actions to be written to the binary log\&.
+.sp
+Running
+\fBmysql_upgrade\fR
+is not recommended with a MySQL Server that is running with global transaction identifiers enabled (Bug #13833710)\&. This is because enabling GTIDs means that any updates which
+\fBmysql_upgrade\fR
+might need to perform on system tables using a nontransactional storage engine such as
+MyISAM
+to fail\&. See
+Section\ \&17.1.3.4, \(lqRestrictions on Replication with GTIDs\(rq, for more information\&.
 .RE
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2018, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2016, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

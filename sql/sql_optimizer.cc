@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -2251,6 +2251,7 @@ check_reverse_order:
         DBUG_ASSERT(tab->quick() == save_quick || tab->quick() == NULL);
         tab->set_quick(NULL);
         tab->set_index(best_key);
+        tab->reversed_access= order_direction < 0;
         tab->set_type(JT_INDEX_SCAN);       // Read with index_first(), index_next()
         /*
           There is a bug. When we change here, e.g. from group_min_max to
@@ -2315,7 +2316,7 @@ check_reverse_order:
         tab->set_type(calc_join_type(tmp->get_type()));
         tab->position()->filter_effect= COND_FILTER_STALE;
       }
-      else if (tab->type() == JT_REF &&
+      else if ((tab->type() == JT_REF || tab->type() == JT_INDEX_SCAN) &&
                tab->ref().key_parts <= used_key_parts)
       {
         /*
@@ -2335,8 +2336,6 @@ check_reverse_order:
         */
         changed_key= tab->ref().key;
       }
-      else if (tab->type() == JT_INDEX_SCAN)
-        tab->reversed_access= true;
     }
     else if (tab->quick())
       tab->quick()->need_sorted_output();
@@ -2447,9 +2446,8 @@ bool JOIN::prune_table_partitions()
   access can utilize more keyparts than 'ref' access. Conditions
   for doing switching:
 
-  1) Range access is possible.
-  2) This function is not relevant for FT, since there is no range access for
-     that type of index.
+  1) Range access is possible
+  2) 'ref' access and 'range' access uses the same index
   3) Used parts of key shouldn't have nullable parts, i.e we're
      going to use 'ref' access, not ref_or_null.
   4) 'ref' access depends on a constant, not a value read from a
@@ -2473,21 +2471,9 @@ bool JOIN::prune_table_partitions()
      therefore trust the cost based choice made by
      best_access_path() instead of forcing a heuristic choice
      here.
-     5a) 'ref' access and 'range' access uses the same index.
-     5b) 'range' access uses more keyparts than 'ref' access.
+  5) 'range' access uses more keyparts than 'ref' access
 
-     OR
-
-     6) Ref has borrowed the index estimate from range and created a cost
-        estimate (See Optimize_table_order::find_best_ref). This will be a
-        problem if range built it's row estimate using a larger number of key
-        parts than ref. In such a case, shift to range access over the same
-        index. So run the range optimizer with that index as the only choice.
-        (Condition 5 is not relevant here since it has been tested in
-        find_best_ref.)
-
-  @param thd THD      To re-run range optimizer.
-  @param tab JOIN_TAB To check the above conditions.
+  @param tab JOIN_TAB to check
 
   @return true   Range is better than ref
   @return false  Ref is better or switch isn't possible
@@ -2495,11 +2481,10 @@ bool JOIN::prune_table_partitions()
   @todo: This decision should rather be made in best_access_path()
 */
 
-static bool can_switch_from_ref_to_range(THD *thd, JOIN_TAB *tab)
+static bool can_switch_from_ref_to_range(JOIN_TAB *tab)
 {
-
-  if (tab->quick() &&                                        // 1)
-      tab->position()->key->keypart != FT_KEYPART)           // 2)
+  if (tab->quick() &&                                           // 1)
+      tab->position()->key->key == tab->quick()->index)           // 2)
   {
     uint keyparts= 0, length= 0;
     table_map dep_map= 0;
@@ -2509,40 +2494,10 @@ static bool can_switch_from_ref_to_range(THD *thd, JOIN_TAB *tab)
                              tab->position()->key->key,
                              tab->prefix_tables(), NULL, &length, &keyparts,
                              &dep_map, &maybe_null);
-    if (maybe_null ||                                        // 3)
-        dep_map)                                             // 4)
-      return false;
-
-    if (tab->position()->key->key == tab->quick()->index &&  // 5a)
-        length < tab->quick()->max_used_key_length)          // 5b)
+    if (!maybe_null &&                                        // 3)
+        !dep_map &&                                           // 4)
+        length < tab->quick()->max_used_key_length)             // 5)
       return true;
-    else if (tab->dodgy_ref_cost)                            // 6)
-    {
-      key_map new_ref_key_map;
-      new_ref_key_map.set_bit(tab->position()->key->key);
-
-      Opt_trace_context * const trace= &thd->opt_trace;
-      Opt_trace_object trace_wrapper(trace);
-      Opt_trace_array
-        trace_setup_cond(trace, "rerunning_range_optimizer_for_single_index");
-
-      QUICK_SELECT_I *qck;
-      if (test_quick_select(thd, new_ref_key_map,
-                            0,       // empty table_map
-                            tab->join()->row_limit,
-                            false,   // don't force quick range
-                            ORDER::ORDER_NOT_RELEVANT,
-                            tab,
-                            tab->join_cond() ? tab->join_cond() :
-                            tab->join()->where_cond,
-                            &tab->needed_reg,
-                            &qck) > 0)
-      {
-        delete tab->quick();
-        tab->set_quick(qck);
-        return true;
-      }
-    }
   }
   return false;
 }
@@ -2599,7 +2554,7 @@ void JOIN::adjust_access_methods()
     }
     else if (tab->type() == JT_REF)
     {
-      if (can_switch_from_ref_to_range(thd, tab))
+      if (can_switch_from_ref_to_range(tab))
       {
         tab->set_type(JT_RANGE);
 
@@ -3269,8 +3224,8 @@ public:
   {
     return sql_alloc(size);
   }
-  static void operator delete(void *ptr MY_ATTRIBUTE((unused)),
-                              size_t size MY_ATTRIBUTE((unused)))
+  static void operator delete(void *ptr __attribute__((unused)),
+                              size_t size __attribute__((unused)))
   { TRASH(ptr, size); }
 
   Item *and_level;
@@ -3839,9 +3794,6 @@ static bool build_equal_items_for_cond(THD *thd, Item *cond, Item **retcond,
   Item_equal *item_equal;
   COND_EQUAL cond_equal;
   cond_equal.upper_levels= inherited;
-
-  if (check_stack_overrun(thd, STACK_MIN_SIZE, NULL))
-    return true;                          // Fatal error flag is set!
 
   const enum Item::Type cond_type= cond->type();
   if (cond_type == Item::COND_ITEM)
@@ -4764,8 +4716,7 @@ void JOIN::update_depend_map(ORDER *order)
   {
     table_map depend_map;
     order->item[0]->update_used_tables();
-    order->depend_map= depend_map=
-      order->item[0]->used_tables() & ~PARAM_TABLE_BIT;
+    order->depend_map=depend_map=order->item[0]->used_tables();
     order->used= 0;
     // Not item_sum(), RAND() and no reference to table outside of sub select
     if (!(order->depend_map & (OUTER_REF_TABLE_BIT | RAND_TABLE_BIT))
@@ -6160,39 +6111,40 @@ static void add_not_null_conds(JOIN *join)
 }
 
 
-/**
-  Check if given expression only uses fields covered by index #keyno in the
-  table tbl. The expression can use any fields in any other tables.
+/* 
+  Check if given expression uses only table fields covered by the given index
 
-  The expression is guaranteed not to be AND or OR - those constructs are
-  handled outside of this function.
+  SYNOPSIS
+    uses_index_fields_only()
+      item           Expression to check
+      tbl            The table having the index
+      keyno          The index number
+      other_tbls_ok  TRUE <=> Fields of other non-const tables are allowed
 
-  Restrict some function types from being pushed down to storage engine:
-  a) Don't push down the triggered conditions. Nested outer joins execution
-     code may need to evaluate a condition several times (both triggered and
-     untriggered).
-  b) Stored functions contain a statement that might start new operations (like
-     DML statements) from within the storage engine. This does not work against
-     all SEs.
-  c) Subqueries might contain nested subqueries and involve more tables.
+  DESCRIPTION
+    Check if given expression only uses fields covered by index #keyno in the
+    table tbl. The expression can use any fields in any other tables.
+    
+    The expression is guaranteed not to be AND or OR - those constructs are 
+    handled outside of this function.
 
-  @param  item           Expression to check
-  @param  tbl            The table having the index
-  @param  keyno          The index number
-  @param  other_tbls_ok  TRUE <=> Fields of other non-const tables are allowed
-
-  @return false if No, true if Yes
+  RETURN
+    TRUE   Yes
+    FALSE  No
 */
 
 bool uses_index_fields_only(Item *item, TABLE *tbl, uint keyno, 
                             bool other_tbls_ok)
 {
-  // Restrictions b and c.
-  if (item->has_stored_program() || item->has_subquery())
-    return false;
-
   if (item->const_item())
-    return true;
+  {
+    /*
+      const_item() might not return correct value if the item tree
+      contains a subquery. If this is the case we do not include this
+      part of the condition.
+    */
+    return !item->has_subquery();
+  }
 
   const Item::Type item_type= item->type();
 
@@ -6203,14 +6155,21 @@ bool uses_index_fields_only(Item *item, TABLE *tbl, uint keyno,
       const Item_func::Functype func_type= item_func->functype();
 
       /*
-        Restriction a.
-        TODO: Consider cloning the triggered condition and using the copies
-        for:
-        1. push the first copy down, to have most restrictive index condition
-           possible.
-        2. Put the second copy into tab->m_condition.
+        Avoid some function types from being pushed down to storage engine:
+        - Don't push down the triggered conditions. Nested outer joins
+          execution code may need to evaluate a condition several times
+          (both triggered and untriggered).
+          TODO: Consider cloning the triggered condition and using the
+                copies for: 
+                 1. push the first copy down, to have most restrictive
+                    index condition possible.
+                 2. Put the second copy into tab->m_condition.
+        - Stored functions contain a statement that might start new operations
+          against the storage engine. This does not work against all storage
+          engines.
       */
-      if (func_type == Item_func::TRIG_COND_FUNC)
+      if (func_type == Item_func::TRIG_COND_FUNC ||
+          func_type == Item_func::FUNC_SP)
         return false;
 
       /* This is a function, apply condition recursively to arguments */
@@ -10509,7 +10468,6 @@ get_sort_by_table(ORDER *a,ORDER *b,TABLE_LIST *tables)
       DBUG_RETURN(0);
     map|=a->item[0]->used_tables();
   }
-  map&= ~PARAM_TABLE_BIT;
   if (!map || (map & (RAND_TABLE_BIT | OUTER_REF_TABLE_BIT)))
     DBUG_RETURN(0);
 
@@ -11202,13 +11160,6 @@ bool JOIN::optimize_rollup()
     These are updated by rollup_make_fields()
   */
   tmp_table_param.group_parts= send_group_parts;
-  /*
-    substitute_gc() might substitute an expression in the GROUP BY list with
-    a generated column. In such case the GC is added to the all_fields as a
-    hidden field. In total, all_fields list could be grown by up to
-    send_group_parts columns. Reserve space for them here.
-  */
-  const uint ref_array_size= all_fields.elements + send_group_parts;
 
   Item_null_result **null_items=
     static_cast<Item_null_result**>(thd->alloc(sizeof(Item*)*send_group_parts));
@@ -11217,7 +11168,7 @@ bool JOIN::optimize_rollup()
   rollup.ref_pointer_arrays=
     static_cast<Ref_ptr_array*>
     (thd->alloc((sizeof(Ref_ptr_array) +
-                 ref_array_size * sizeof(Item*)) * send_group_parts));
+                 all_fields.elements * sizeof(Item*)) * send_group_parts));
   rollup.fields=
     static_cast<List<Item>*>(thd->alloc(sizeof(List<Item>) * send_group_parts));
 
@@ -11240,8 +11191,8 @@ bool JOIN::optimize_rollup()
       return true;           /* purecov: inspected */
     List<Item> *rollup_fields= &rollup.fields[i];
     rollup_fields->empty();
-    rollup.ref_pointer_arrays[i]= Ref_ptr_array(ref_array, ref_array_size);
-    ref_array+= ref_array_size;
+    rollup.ref_pointer_arrays[i]= Ref_ptr_array(ref_array, all_fields.elements);
+    ref_array+= all_fields.elements;
   }
   for (uint i= 0; i < send_group_parts; i++)
   {

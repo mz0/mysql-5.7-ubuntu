@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -238,21 +238,21 @@ bool Item::val_bool()
 */
 String *Item::val_str_ascii(String *str)
 {
+  if (!(collation.collation->state & MY_CS_NONASCII))
+    return val_str(str);
+  
   DBUG_ASSERT(str != &str_value);
   
   uint errors;
   String *res= val_str(&str_value);
   if (!res)
     return 0;
-
-  if (!(res->charset()->state & MY_CS_NONASCII))
-    str= res;
-  else
-  {
-    if ((null_value= str->copy(res->ptr(), res->length(), collation.collation,
-                               &my_charset_latin1, &errors)))
-      return 0;
-  }
+  
+  if ((null_value= str->copy(res->ptr(), res->length(),
+                             collation.collation, &my_charset_latin1,
+                             &errors)))
+    return 0;
+  
   return str;
 }
 
@@ -1034,6 +1034,29 @@ bool Item_field::find_item_in_field_list_processor(uchar *arg)
 }
 
 
+/**
+  Mark field in read or write map of a table.
+
+  @param arg Struct that tells which map to update and how
+           table If = NULL, update map of any table
+                 If <> NULL, update map only if field is from this table
+           mark  How to mark current column
+*/
+
+bool Item_field::mark_field_in_map(uchar *arg)
+{
+  Mark_field *mark_field= (Mark_field *)arg;
+  TABLE *table= mark_field->table;
+  if (table != NULL && table != field->table)
+    return false;
+
+  table= field->table;
+  table->mark_column_used(table->in_use, field, mark_field->mark);
+
+  return false;
+}
+
+
 bool Item_field::check_gcol_func_processor(uchar *int_arg)
 {
   int *args= reinterpret_cast<int *>(int_arg);
@@ -1323,31 +1346,14 @@ Item *Item_param::safe_charset_converter(const CHARSET_INFO *tocs)
 {
   if (const_item())
   {
-    Item *cnvitem;
-    String tmp, cstr, *ostr= val_str(&tmp);
-
-    if (null_value)
-    {
-      cnvitem= new Item_null();
-      if (cnvitem == NULL)
-        return NULL;
-
-      cnvitem->collation.set(tocs);
-    }
-    else
-    {
-      uint conv_errors;
-      cstr.copy(ostr->ptr(), ostr->length(), ostr->charset(), tocs,
-                &conv_errors);
-
-      if (conv_errors || !(cnvitem= new Item_string(cstr.ptr(), cstr.length(),
-                                                    cstr.charset(),
-                                                    collation.derivation)))
-        return NULL;
-
-      cnvitem->str_value.copy();
-      cnvitem->str_value.mark_as_const();
-    }
+    uint cnv_errors;
+    String *ostr= val_str(&cnvstr);
+    cnvitem->str_value.copy(ostr->ptr(), ostr->length(),
+                            ostr->charset(), tocs, &cnv_errors);
+    if (cnv_errors)
+       return NULL;
+    cnvitem->str_value.mark_as_const();
+    cnvitem->max_length= static_cast<uint32>(cnvitem->str_value.numchars() * tocs->mbmaxlen);
     return cnvitem;
   }
   return Item::safe_charset_converter(tocs);
@@ -2205,28 +2211,17 @@ void Item::split_sum_func2(THD *thd, Ref_ptr_array ref_pointer_array,
       Exception is Item_direct_view_ref which we need to convert to
       Item_ref to allow fields from view being stored in tmp table.
     */
+    Item_aggregate_ref *item_ref;
     uint el= fields.elements;
     Item *real_itm= real_item();
-    SELECT_LEX *base_select;
-    SELECT_LEX *depended_from= NULL;
 
-    if (type() == SUM_FUNC_ITEM)
-    {
-      Item_sum *const item= down_cast<Item_sum *>(this);
-      base_select= item->base_select;
-      depended_from= item->depended_from();
-    }
-    else
-    {
-      base_select= thd->lex->current_select();
-    }
     ref_pointer_array[el]= real_itm;
-    Item_aggregate_ref *const item_ref=
-      new Item_aggregate_ref(&base_select->context, &ref_pointer_array[el],
-                             0, item_name.ptr());
-    if (!item_ref)
-      return;                      /* purecov: inspected */
-    item_ref->depended_from= depended_from;
+    if (!(item_ref= new Item_aggregate_ref(&thd->lex->current_select()->context,
+                                           &ref_pointer_array[el], 0,
+                                           item_name.ptr())))
+      return;                                   // fatal_error is set
+    if (type() == SUM_FUNC_ITEM)
+      item_ref->depended_from= ((Item_sum *) this)->depended_from(); 
     fields.push_front(real_itm);
     thd->change_item_tree(ref, item_ref);
   }
@@ -2638,9 +2633,6 @@ Item_field::Item_field(Field *f)
    item_equal(NULL), no_const_subst(false),
    have_privileges(0), any_privileges(false)
 {
-  if (f->table->pos_in_table_list != NULL)
-    context= &(f->table->pos_in_table_list->select_lex->context);
-
   set_field(f);
   /*
     field_name and table_name should not point to garbage
@@ -3706,8 +3698,8 @@ Item *Item_null::safe_charset_converter(const CHARSET_INFO *tocs)
 
 static void
 default_set_param_func(Item_param *param,
-                       uchar **pos MY_ATTRIBUTE((unused)),
-                       ulong len MY_ATTRIBUTE((unused)))
+                       uchar **pos __attribute__((unused)),
+                       ulong len __attribute__((unused)))
 {
   param->set_null();
 }
@@ -3731,6 +3723,8 @@ Item_param::Item_param(const POS &pos, uint pos_in_query_arg) : super(pos),
     value is set.
   */
   maybe_null= 1;
+  cnvitem= new Item_string("", 0, &my_charset_bin, DERIVATION_COERCIBLE);
+  cnvstr.set(cnvbuf, sizeof(cnvbuf), &my_charset_bin);
 }
 
 
@@ -3856,11 +3850,12 @@ void Item_param::set_time(MYSQL_TIME *tm, timestamp_type time_type,
 
   value.time= *tm;
   value.time.time_type= time_type;
-  decimals= tm->second_part ? DATETIME_MAX_DECIMALS : 0;
 
   if (check_datetime_range(&value.time))
   {
-    make_truncated_value_warning(ErrConvString(&value.time, decimals),
+    make_truncated_value_warning(ErrConvString(&value.time,
+                                               MY_MIN(decimals,
+                                                      DATETIME_MAX_DECIMALS)),
                                  time_type);
     set_zero_time(&value.time, MYSQL_TIMESTAMP_ERROR);
   }
@@ -3868,6 +3863,7 @@ void Item_param::set_time(MYSQL_TIME *tm, timestamp_type time_type,
   state= TIME_VALUE;
   maybe_null= 0;
   max_length= max_length_arg;
+  decimals= 0;
   DBUG_VOID_RETURN;
 }
 
@@ -4411,8 +4407,7 @@ Item_param::eq(const Item *arg, bool binary_cmp) const
 
 void Item_param::print(String *str, enum_query_type query_type)
 {
-  if (state == NO_VALUE ||
-      query_type & (QT_NORMALIZED_FORMAT | QT_NO_DATA_EXPANSION))
+  if (state == NO_VALUE || query_type & QT_NORMALIZED_FORMAT)
   {
     str->append('?');
   }
@@ -4838,7 +4833,6 @@ Item_copy_json::save_in_field_inner(Field *field, bool no_conversions)
   }
   else
   {
-    str_value.length(0);
     if (m_value->to_string(&str_value, true, item_name.ptr()))
       return set_field_to_null(field);        /* purecov: inspected */
     return save_str_value_in_field(field, &str_value);
@@ -5613,28 +5607,6 @@ Item_field::fix_outer_field(THD *thd, Field **from_field, Item **reference)
           prev_subselect_item->used_tables_cache|= ut.used_tables;
           prev_subselect_item->const_item_cache&=
             (*reference)->const_item();
-
-          if (select->group_list.elements && place == CTX_HAVING)
-          {
-            /*
-              If an outer field is resolved in a grouping query block then it
-              is replaced with an Item_outer_ref object. Otherwise an
-              Item_field object is used.
-              The new Item_outer_ref object is saved in the inner_refs_list of
-              the outer query block. Here it is only created. It can be fixed
-              only after the original field has been fixed and this is done
-              in the fix_inner_refs() function.
-            */
-            Item_outer_ref *const rf=
-              new Item_outer_ref(context, down_cast<Item_ident *>(*reference));
-            if (rf == NULL)
-              return -1;
-            thd->change_item_tree(reference, rf);
-            if (select->inner_refs_list.push_back(rf))
-              return -1;
-            rf->in_sum_func= thd->lex->in_sum_func;
-          }
-
           if (thd->lex->in_sum_func &&
               thd->lex->in_sum_func->nest_level >= select->nest_level)
             set_if_bigger(thd->lex->in_sum_func->max_arg_level,
@@ -5993,7 +5965,7 @@ bool Item_field::fix_fields(THD *thd, Item **reference)
   {
     TABLE *table= field->table;
     MY_BITMAP *current_bitmap;
-    MY_BITMAP *other_bitmap MY_ATTRIBUTE((unused));
+    MY_BITMAP *other_bitmap __attribute__((unused));
     if (thd->mark_used_columns == MARK_COLUMNS_READ)
     {
       current_bitmap= table->read_set;
@@ -7856,8 +7828,7 @@ Item *Item_field::update_value_transformer(uchar *select_arg)
 
 void Item_field::print(String *str, enum_query_type query_type)
 {
-  if (field && field->table->const_table &&
-      !(query_type & QT_NO_DATA_EXPANSION))
+  if (field && field->table->const_table)
   {
     char buff[MAX_FIELD_WIDTH];
     String tmp(buff,sizeof(buff),str->charset());
@@ -9091,7 +9062,7 @@ Item *Item_default_value::transform(Item_transformer transformer, uchar *args)
 bool Item_insert_value::eq(const Item *item, bool binary_cmp) const
 {
   return item->type() == INSERT_VALUE_ITEM &&
-    (down_cast<const Item_insert_value *>(item))->arg->eq(arg, binary_cmp);
+    ((Item_default_value *)item)->arg->eq(arg, binary_cmp);
 }
 
 
@@ -10968,26 +10939,4 @@ bool Item_ident::is_column_not_in_fd(uchar *arg)
 {
   Group_check *const gc= reinterpret_cast<Group_check *>(arg);
   return gc->do_ident_check(this, 0, Group_check::CHECK_COLUMN);
-}
-
-/**
-   The aim here is to find a real_item() which is of type Item_field.
-*/
-bool Item_ref::repoint_const_outer_ref(uchar *arg)
-{
-  *(pointer_cast<bool*>(arg))= true;
-  return false;
-}
-
-/**
-   If this object is the real_item of an Item_ref, repoint the result_field to
-   field.
-*/
-bool Item_field::repoint_const_outer_ref(uchar *arg)
-{
-  bool *is_outer_ref= pointer_cast<bool*>(arg);
-  if (*is_outer_ref)
-    result_field= field;
-  *is_outer_ref= false;
-  return false;
 }

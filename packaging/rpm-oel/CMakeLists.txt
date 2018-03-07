@@ -1,4 +1,4 @@
-# Copyright (c) 2012, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2012, 2015, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -26,7 +26,9 @@ IF(UNIX)
   # Left in current directory, to be taken during build
   CONFIGURE_FILE(mysql.spec.in ${CMAKE_CURRENT_BINARY_DIR}/${SPECFILENAME} @ONLY)
 
-  FOREACH(fedfile mysql.init)
+  FOREACH(fedfile my.cnf my_config.h mysql_config.sh
+          mysql.init filter-requires.sh filter-provides.sh
+          mysql-5.7-libmysqlclient-symbols.patch)
     CONFIGURE_FILE(${fedfile} ${CMAKE_CURRENT_BINARY_DIR}/${fedfile} COPYONLY)
   ENDFOREACH()
 ENDIF()

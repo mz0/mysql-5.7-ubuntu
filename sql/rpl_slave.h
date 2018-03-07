@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -63,7 +63,7 @@ typedef enum { SLAVE_THD_IO, SLAVE_THD_SQL, SLAVE_THD_WORKER } SLAVE_THD_TYPE;
 
 #define SLAVE_NET_TIMEOUT  60
 
-#define MAX_SLAVE_ERROR    10000
+#define MAX_SLAVE_ERROR    2000
 
 #define MTS_WORKER_UNDEF ((ulong) -1)
 #define MTS_MAX_WORKERS  1024
@@ -113,6 +113,11 @@ extern bool server_id_supplied;
   start till the end. This thus protects us against a handful of deadlocks
   (consider start_slave_thread() which, when starting the I/O thread, releases
   mi->run_lock, keeps rli->run_lock, and tries to re-acquire mi->run_lock).
+
+  Currently active_mi never moves (it's created at startup and deleted at
+  shutdown, and not changed: it always points to the same Master_info struct),
+  because we don't have multimaster. So for the moment, mi does not move, and
+  mi->rli does not either.
 
   In Master_info: run_lock, data_lock
   run_lock protects all information about the run state: slave_running, thd
@@ -313,16 +318,15 @@ int init_recovery(Master_info* mi, const char** errmsg);
   @retval 0 Success
   @retval nonzero Error
 */
-int load_mi_and_rli_from_repositories(Master_info* mi,
-                                      bool ignore_if_no_info,
-                                      int thread_mask);
+int global_init_info(Master_info* mi, bool ignore_if_no_info, int thread_mask);
 void end_info(Master_info* mi);
 int remove_info(Master_info* mi);
 int flush_master_info(Master_info* mi, bool force);
 void add_slave_skip_errors(const char* arg);
 void set_slave_skip_errors(char** slave_skip_errors_ptr);
 int register_slave_on_master(MYSQL* mysql);
-int add_new_channel(Master_info** mi, const char* channel);
+int add_new_channel(Master_info** mi, const char* channel,
+                    enum_channel_type channel_type= SLAVE_REPLICATION_CHANNEL);
 /**
   Terminates the slave threads according to the given mask.
 
@@ -410,6 +414,7 @@ extern "C" void *handle_slave_sql(void *arg);
 bool net_request_file(NET* net, const char* fname);
 
 extern bool volatile abort_loop;
+extern Master_info *active_mi;      /* active_mi  for multi-master */
 extern LIST master_list;
 extern my_bool replicate_same_server_id;
 

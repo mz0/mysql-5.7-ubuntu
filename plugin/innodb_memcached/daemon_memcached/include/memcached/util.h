@@ -1,5 +1,3 @@
-/* Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved. */
-
 #ifndef UTIL_H
 #define UTIL_H
 /*
@@ -13,11 +11,6 @@
  */
 #include <memcached/visibility.h>
 #include <memcached/types.h>
-
-/* Changed for INNODB_MEMCACHED */
-#if defined(htonll)
-#define HAVE_HTONLL 1
-#endif
 
 #ifdef __cplusplus
 extern "C" {

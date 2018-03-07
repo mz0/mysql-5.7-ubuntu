@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -69,7 +69,7 @@ static  HANDLE hEventLog= NULL;                  // global
      0 Success
     -1 Error
 */
-int my_syslog(const CHARSET_INFO *cs MY_ATTRIBUTE((unused)),
+int my_syslog(const CHARSET_INFO *cs __attribute__((unused)),
               enum loglevel level,
               const char *msg)
 {
@@ -245,7 +245,7 @@ int my_openlog(const char *name, int option, int facility)
   }
   else
   {
-    if (hEventLog != NULL)
+    if (hEventLog)
       DeregisterEventSource(hEventLog);
     hEventLog= hEL_new;
   }
@@ -272,14 +272,13 @@ int my_closelog(void)
   closelog();
   DBUG_RETURN(0);
 #else
-  if ((hEventLog != NULL) && (! DeregisterEventSource(hEventLog)))
+  if (hEventLog && (! DeregisterEventSource(hEventLog)))
     goto err;
 
   hEventLog= NULL;
   DBUG_RETURN(0);
 
 err:
-  hEventLog= NULL;
   // map error appropriately
   my_osmaperr(GetLastError());
   DBUG_RETURN(-1);

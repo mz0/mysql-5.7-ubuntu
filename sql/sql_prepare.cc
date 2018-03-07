@@ -1,4 +1,4 @@
-/* Copyright (c) 2002, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2002, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -369,7 +369,7 @@ static bool send_prep_stmt(Prepared_statement *stmt, uint columns)
 }
 #else
 static bool send_prep_stmt(Prepared_statement *stmt,
-                           uint columns MY_ATTRIBUTE((unused)))
+                           uint columns __attribute__((unused)))
 {
   THD *thd= stmt->thd;
 
@@ -673,7 +673,7 @@ void set_param_datetime(Item_param *param, uchar **pos, ulong len)
   tm.neg= 0;
 
   param->set_time(&tm, MYSQL_TIMESTAMP_DATETIME,
-                  MAX_DATETIME_FULL_WIDTH * MY_CHARSET_BIN_MB_MAXLEN);
+                  MAX_DATETIME_WIDTH * MY_CHARSET_BIN_MB_MAXLEN);
 }
 
 void set_param_date(Item_param *param, uchar **pos, ulong len)
@@ -1198,6 +1198,9 @@ bool Sql_cmd_insert::mysql_test_insert(THD *thd, TABLE_LIST *table_list)
 
   if ((values= its++))
   {
+    uint value_count;
+    ulong counter= 0;
+
     if (table_list->table)
     {
       // don't allocate insert_values
@@ -1207,7 +1210,20 @@ bool Sql_cmd_insert::mysql_test_insert(THD *thd, TABLE_LIST *table_list)
     if (mysql_prepare_insert(thd, table_list, values, false))
       goto error;
 
+    value_count= values->elements;
     its.rewind();
+
+    while ((values= its++))
+    {
+      counter++;
+      if (values->elements != value_count)
+      {
+        my_error(ER_WRONG_VALUE_COUNT_ON_ROW, MYF(0), counter);
+        goto error;
+      }
+      if (setup_fields(thd, Ref_ptr_array(), *values, 0, NULL, false, false))
+        goto error;
+    }
   }
   DBUG_RETURN(FALSE);
 
@@ -2104,12 +2120,10 @@ void mysqld_stmt_prepare(THD *thd, const char *query, uint length)
       thd->get_protocol()->get_client_capabilities());
 
   thd->set_protocol(&thd->protocol_binary);
-
-  /* Create PS table entry, set query text after rewrite. */
   stmt->m_prepared_stmt= MYSQL_CREATE_PS(stmt, stmt->id,
                                          thd->m_statement_psi,
                                          stmt->name().str, stmt->name().length,
-                                         NULL, 0);
+                                         query, length);
 
   if (stmt->prepare(query, length))
   {
@@ -2291,11 +2305,10 @@ void mysql_sql_stmt_prepare(THD *thd)
     DBUG_VOID_RETURN;
   }
 
-  /* Create PS table entry, set query text after rewrite. */
   stmt->m_prepared_stmt= MYSQL_CREATE_PS(stmt, stmt->id,
                                          thd->m_statement_psi,
                                          stmt->name().str, stmt->name().length,
-                                         NULL, 0);
+                                         query, query_len);
 
   if (stmt->prepare(query, query_len))
   {
@@ -3258,19 +3271,14 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length)
   invoke_pre_parse_rewrite_plugins(thd);
   thd->m_parser_state = NULL;
 
-  error= thd->is_error();
+  error= parse_sql(thd, &parser_state, NULL) ||
+    thd->is_error() ||
+    init_param_array(this);
 
   if (!error)
-  {
-    error = parse_sql(thd, &parser_state, NULL) ||
-            thd->is_error() ||
-            init_param_array(this);
-
-    if (!error)
-    { // We've just created the statement maybe there is a rewrite
-      invoke_post_parse_rewrite_plugins(thd, true);
-      error = init_param_array(this);
-    }
+  { // We've just created the statement maybe there is a rewrite
+    invoke_post_parse_rewrite_plugins(thd, true);
+    error= init_param_array(this);
   }
 
   lex->set_trg_event_type_for_tables();
@@ -3321,7 +3329,6 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length)
   DBUG_ASSERT(lex->sphead == NULL || error != 0);
   /* The order is important */
   lex->unit->cleanup(true);
-  lex->clear_values_map();
 
   /* No need to commit statement transaction, it's not started. */
   DBUG_ASSERT(thd->get_transaction()->is_empty(Transaction_ctx::STMT));
@@ -3347,19 +3354,6 @@ bool Prepared_statement::prepare(const char *query_str, size_t query_length)
   lex_end(lex);
 
   rewrite_query_if_needed(thd);
-
-  if (thd->rewritten_query.length())
-  {
-    MYSQL_SET_PS_TEXT(m_prepared_stmt,
-                      thd->rewritten_query.c_ptr_safe(),
-                      thd->rewritten_query.length());
-  }
-  else
-  {
-    MYSQL_SET_PS_TEXT(m_prepared_stmt,
-                      thd->query().str,
-                      thd->query().length);
-  }  
 
   cleanup_stmt();
   stmt_backup.restore_thd(thd, this);
@@ -3906,10 +3900,7 @@ bool Prepared_statement::execute(String *expanded_query, bool open_cursor)
     // Execute
 
     if (open_cursor)
-    {
-      lex->safe_to_cache_query= 0;
       error= mysql_open_cursor(thd, &result, &cursor);
-    }
     else
     {
       /*
@@ -4402,7 +4393,7 @@ bool Protocol_local::store(const char *str, size_t length,
 /* Store MYSQL_TIME (in binary format) */
 
 bool Protocol_local::store(MYSQL_TIME *time,
-                           uint precision MY_ATTRIBUTE((unused)))
+                           uint precision __attribute__((unused)))
 {
   return store_column(time, sizeof(MYSQL_TIME));
 }
@@ -4419,7 +4410,7 @@ bool Protocol_local::store_date(MYSQL_TIME *time)
 /** Store MYSQL_TIME (in binary format) */
 
 bool Protocol_local::store_time(MYSQL_TIME *time,
-                                uint precision MY_ATTRIBUTE((unused)))
+                                uint precision __attribute__((unused)))
 {
   return store_column(time, sizeof(MYSQL_TIME));
 }

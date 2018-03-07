@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -183,11 +183,9 @@ lock_tables_check(THD *thd, TABLE **tables, size_t count, uint flags)
 
     /*
       Prevent modifications to base tables if READ_ONLY is activated.
-      In any case, read only does not apply to temporary tables and
-      performance_schema tables.
+      In any case, read only does not apply to temporary tables.
     */
-    if (!(flags & MYSQL_LOCK_IGNORE_GLOBAL_READ_ONLY) && !t->s->tmp_table &&
-        !is_perfschema_db(t->s->db.str, t->s->db.length))
+    if (!(flags & MYSQL_LOCK_IGNORE_GLOBAL_READ_ONLY) && !t->s->tmp_table)
     {
       if (t->reginfo.lock_type >= TL_WRITE_ALLOW_WRITE &&
         check_readonly(thd, true))
@@ -881,7 +879,7 @@ bool lock_tablespace_name(THD *thd, const char *tablespace)
 // Function generating hash key for Tablespace_hash_set.
 extern "C" uchar *tablespace_set_get_key(const uchar *record,
                                          size_t *length,
-                                         my_bool not_used MY_ATTRIBUTE((unused)))
+                                         my_bool not_used __attribute__((unused)))
 {
   const char *tblspace_name= reinterpret_cast<const char *>(record);
   *length= strlen(tblspace_name);

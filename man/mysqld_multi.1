@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: \fBmysqld_multi\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 12/26/2017
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/01/2016
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.7
 .\"  Language: English
 .\"
-.TH "\FBMYSQLD_MULTI\FR" "1" "12/26/2017" "MySQL 5\&.7" "MySQL Database System"
+.TH "\FBMYSQLD_MULTI\FR" "1" "02/01/2016" "MySQL 5\&.7" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -27,6 +27,10 @@
 .\" -----------------------------------------------------------------
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
+.\" mysqld_multi
+.\" tools: mysqld_multi
+.\" scripts
+.\" multi mysqld
 .SH "NAME"
 mysqld_multi \- manage multiple MySQL servers
 .SH "SYNOPSIS"
@@ -38,25 +42,6 @@ mysqld_multi \- manage multiple MySQL servers
 is designed to manage several
 \fBmysqld\fR
 processes that listen for connections on different Unix socket files and TCP/IP ports\&. It can start or stop servers, or report their current status\&.
-.if n \{\
-.sp
-.\}
-.RS 4
-.it 1 an-trap
-.nr an-no-space-flag 1
-.nr an-break-flag 1
-.br
-.ps +1
-\fBNote\fR
-.ps -1
-.br
-.PP
-For some Linux platforms, MySQL installation from RPM or Debian packages includes systemd support for managing MySQL server startup and shutdown\&. On these platforms,
-\fBmysqld_multi\fR
-is not installed because it is unnecessary\&. For information about using systemd to handle multiple MySQL instances, see
-Section\ \&2.5.10, \(lqManaging MySQL Server with systemd\(rq\&.
-.sp .5v
-.RE
 .PP
 \fBmysqld_multi\fR
 searches for groups named
@@ -75,7 +60,7 @@ to specify which servers you want to start, stop, or obtain a status report for\
 group used for starting
 \fBmysqld\fR\&. (See, for example,
 Section\ \&2.10.5, \(lqStarting and Stopping MySQL Automatically\(rq\&.) However, when using multiple servers, it is necessary that each one use its own value for options such as the Unix socket file and TCP/IP port number\&. For more information on which options must be unique per server in a multiple\-server environment, see
-Section\ \&5.6, \(lqRunning Multiple MySQL Instances on One Machine\(rq\&.
+Section\ \&5.3, \(lqRunning Multiple MySQL Instances on One Machine\(rq\&.
 .PP
 To invoke
 \fBmysqld_multi\fR, use the following syntax:
@@ -172,6 +157,8 @@ searches for option files as follows:
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: no-defaults option
+.\" no-defaults option: mysqld_multi
 With
 \fB\-\-no\-defaults\fR, no option files are read\&.
 .RE
@@ -184,6 +171,8 @@ With
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: defaults-file option
+.\" defaults-file option: mysqld_multi
 With
 \fB\-\-defaults\-file=\fR\fB\fIfile_name\fR\fR, only the named file is read\&.
 .RE
@@ -196,6 +185,8 @@ With
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: defaults-extra-file option
+.\" defaults-extra-file option: mysqld_multi
 Otherwise, option files in the standard list of locations are read, including any file named by the
 \fB\-\-defaults\-extra\-file=\fR\fB\fIfile_name\fR\fR
 option, if one is given\&. (If the option is given multiple times, the last value is used\&.)
@@ -241,6 +232,8 @@ supports the following options\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: help option
+.\" help option: mysqld_multi
 \fB\-\-help\fR
 .sp
 Display a help message and exit\&.
@@ -254,6 +247,8 @@ Display a help message and exit\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: example option
+.\" example option: mysqld_multi
 \fB\-\-example\fR
 .sp
 Display a sample option file\&.
@@ -267,6 +262,8 @@ Display a sample option file\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: log option
+.\" log option: mysqld_multi
 \fB\-\-log=\fR\fB\fIfile_name\fR\fR
 .sp
 Specify the name of the log file\&. If the file exists, log output is appended to it\&.
@@ -280,6 +277,8 @@ Specify the name of the log file\&. If the file exists, log output is appended t
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: mysqladmin option
+.\" mysqladmin option: mysqld_multi
 \fB\-\-mysqladmin=\fR\fB\fIprog_name\fR\fR
 .sp
 The
@@ -295,6 +294,8 @@ binary to be used to stop servers\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: mysqld option
+.\" mysqld option: mysqld_multi
 \fB\-\-mysqld=\fR\fB\fIprog_name\fR\fR
 .sp
 The
@@ -335,6 +336,8 @@ ledir  = /opt/local/mysql/libexec
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: no-log option
+.\" no-log option: mysqld_multi
 \fB\-\-no\-log\fR
 .sp
 Print log information to
@@ -350,6 +353,8 @@ rather than to the log file\&. By default, output goes to the log file\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: password option
+.\" password option: mysqld_multi
 \fB\-\-password=\fR\fB\fIpassword\fR\fR
 .sp
 The password of the MySQL account to use when invoking
@@ -364,6 +369,8 @@ The password of the MySQL account to use when invoking
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: silent option
+.\" silent option: mysqld_multi
 \fB\-\-silent\fR
 .sp
 Silent mode; disable warnings\&.
@@ -377,6 +384,8 @@ Silent mode; disable warnings\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: tcp-ip option
+.\" tcp-ip option: mysqld_multi
 \fB\-\-tcp\-ip\fR
 .sp
 Connect to each MySQL server through the TCP/IP port instead of the Unix socket file\&. (If a socket file is missing, the server might still be running, but accessible only through the TCP/IP port\&.) By default, connections are made using the Unix socket file\&. This option affects
@@ -394,6 +403,8 @@ operations\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: user option
+.\" user option: mysqld_multi
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR
 .sp
 The user name of the MySQL account to use when invoking
@@ -408,6 +419,8 @@ The user name of the MySQL account to use when invoking
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: verbose option
+.\" verbose option: mysqld_multi
 \fB\-\-verbose\fR
 .sp
 Be more verbose\&.
@@ -421,6 +434,8 @@ Be more verbose\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqld_multi: version option
+.\" version option: mysqld_multi
 \fB\-\-version\fR
 .sp
 Display version information and exit\&.
@@ -452,7 +467,17 @@ servers with the same data directory\&. Use separate data directories, unless yo
 what you are doing\&. Starting multiple servers with the same data directory does
 \fInot\fR
 give you extra performance in a threaded system\&. See
-Section\ \&5.6, \(lqRunning Multiple MySQL Instances on One Machine\(rq\&.
+Section\ \&5.3, \(lqRunning Multiple MySQL Instances on One Machine\(rq\&.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.sp -1
+.IP \(bu 2.3
+.\}
 .if n \{\
 .sp
 .\}
@@ -560,7 +585,31 @@ monitors its
 \fBmysqld\fR
 process and restarts it if the process terminates due to a signal sent using
 kill \-9
-or for other reasons, such as a segmentation fault\&.
+or for other reasons, such as a segmentation fault\&. Please note that the
+\fBmysqld_safe\fR
+script might require that you start it from a certain place\&. This means that you might have to change location to a certain directory before running
+\fBmysqld_multi\fR\&. If you have problems starting, please see the
+\fBmysqld_safe\fR
+script\&. Check especially the lines:
+.sp
+.if n \{\
+.RS 4
+.\}
+.nf
+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-
+MY_PWD=`pwd`
+# Check if we are starting this relative (for the binary release)
+if test \-d $MY_PWD/data/mysql \-a \e
+   \-f \&./share/mysql/english/errmsg\&.sys \-a \e
+   \-x \&./bin/mysqld
+\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-\-
+.fi
+.if n \{\
+.RE
+.\}
+.sp
+The test performed by these lines should be successful, or you might encounter problems\&. See
+\fBmysqld_safe\fR(1)\&.
 .RE
 .sp
 .RS 4
@@ -642,7 +691,7 @@ Section\ \&4.2.6, \(lqUsing Option Files\(rq\&.
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2018, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2016, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

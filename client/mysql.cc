@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -136,8 +136,7 @@ static my_bool ignore_errors=0,wait_flag=0,quick=0,
                default_pager_set= 0, opt_sigint_ignore= 0,
                auto_vertical_output= 0,
                show_warnings= 0, executing_query= 0, interrupted_query= 0,
-               ignore_spaces= 0, sigint_received= 0, opt_syslog= 0,
-               opt_binhex= 0;
+               ignore_spaces= 0, sigint_received= 0, opt_syslog= 0;
 static my_bool debug_info_flag, debug_check_flag;
 static my_bool column_types_flag;
 static my_bool preserve_comments= 0;
@@ -1435,8 +1434,7 @@ int main(int argc,char *argv[])
     "statement.\n");
   put_info(buff,INFO_INFO);
 
-  uint protocol= MYSQL_PROTOCOL_DEFAULT;
-  uint ssl_mode= 0;
+  uint protocol, ssl_mode;
   if (!mysql_get_option(&mysql, MYSQL_OPT_PROTOCOL, &protocol) &&
       !mysql_get_option(&mysql, MYSQL_OPT_SSL_MODE, &ssl_mode))
   {
@@ -1662,8 +1660,6 @@ static struct my_option my_long_options[] =
   {"bind-address", 0, "IP address to bind to.",
    (uchar**) &opt_bind_addr, (uchar**) &opt_bind_addr, 0, GET_STR,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"binary-as-hex", 'b', "Print binary data as hex", &opt_binhex, &opt_binhex,
-   0, GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {"character-sets-dir", OPT_CHARSETS_DIR,
    "Directory for character set files.", &charsets_dir,
    &charsets_dir, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -1943,7 +1939,7 @@ static void usage(int version)
 
 
 my_bool
-get_one_option(int optid, const struct my_option *opt MY_ATTRIBUTE((unused)),
+get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 	       char *argument)
 {
   switch(optid) {
@@ -2582,10 +2578,7 @@ static bool add_line(String &buffer, char *line, size_t line_length,
       if (*in_string || inchar == 'N')	// \N is short for NULL
       {					// Don't allow commands in string
 	*out++='\\';
-        if ((inchar == '`') && (*in_string == inchar))
-          pos--;
-        else
-	  *out++= (char) inchar;
+	*out++= (char) inchar;
 	continue;
       }
       if ((com= find_command((char) inchar)))
@@ -2823,7 +2816,7 @@ C_MODE_END
   if not.
 */
 
-#if defined(USE_NEW_EDITLINE_INTERFACE)
+#if defined(USE_NEW_READLINE_INTERFACE) 
 static int fake_magic_space(int, int);
 extern "C" char *no_completion(const char*,int)
 #elif defined(USE_LIBEDIT_INTERFACE)
@@ -2852,7 +2845,7 @@ static int not_in_history(const char *line)
 }
 
 
-#if defined(USE_NEW_EDITLINE_INTERFACE)
+#if defined(USE_NEW_READLINE_INTERFACE)
 static int fake_magic_space(int, int)
 #else
 static int fake_magic_space(const char *, int)
@@ -2869,7 +2862,7 @@ static void initialize_readline (char *name)
   rl_readline_name = name;
 
   /* Tell the completer that we want a crack first. */
-#if defined(USE_NEW_EDITLINE_INTERFACE)
+#if defined(USE_NEW_READLINE_INTERFACE)
   rl_attempted_completion_function= (rl_completion_func_t*)&new_mysql_completion;
   rl_completion_entry_function= (rl_compentry_func_t*)&no_completion;
 
@@ -2893,11 +2886,11 @@ static void initialize_readline (char *name)
 */
 
 static char **new_mysql_completion(const char *text,
-                                   int start MY_ATTRIBUTE((unused)),
-                                   int end MY_ATTRIBUTE((unused)))
+                                   int start __attribute__((unused)),
+                                   int end __attribute__((unused)))
 {
   if (!status.batch && !quick)
-#if defined(USE_NEW_EDITLINE_INTERFACE)
+#if defined(USE_NEW_READLINE_INTERFACE)
     return rl_completion_matches(text, new_command_generator);
 #else
     return completion_matches((char *)text, (CPFunction *)new_command_generator);
@@ -3353,7 +3346,7 @@ int mysql_real_query_for_lazy(const char *buf, size_t length)
   for (uint retry=0;; retry++)
   {
     int error;
-    if (!mysql_real_query(&mysql,buf,(ulong)length))
+    if (!mysql_real_query(&mysql,buf,length))
       return 0;
     error= put_error(&mysql);
     if (mysql_errno(&mysql) != CR_SERVER_GONE_ERROR || retry > 1 ||
@@ -3386,8 +3379,8 @@ static void print_help_item(MYSQL_ROW *cur, int num_name, int num_cat, char *las
 }
 
 
-static int com_server_help(String *buffer MY_ATTRIBUTE((unused)),
-			   char *line MY_ATTRIBUTE((unused)), char *help_arg)
+static int com_server_help(String *buffer __attribute__((unused)),
+			   char *line __attribute__((unused)), char *help_arg)
 {
   MYSQL_ROW cur;
   const char *server_cmd;
@@ -3491,8 +3484,8 @@ err:
 }
 
 static int
-com_help(String *buffer MY_ATTRIBUTE((unused)),
-	 char *line MY_ATTRIBUTE((unused)))
+com_help(String *buffer __attribute__((unused)),
+	 char *line __attribute__((unused)))
 {
   int i, j;
   char * help_arg= strchr(line,' '), buff[32], *end;
@@ -3531,7 +3524,7 @@ com_help(String *buffer MY_ATTRIBUTE((unused)),
 
 	/* ARGSUSED */
 static int
-com_clear(String *buffer,char *line MY_ATTRIBUTE((unused)))
+com_clear(String *buffer,char *line __attribute__((unused)))
 {
   if (status.add_to_history)
     fix_line(buffer);
@@ -3541,7 +3534,7 @@ com_clear(String *buffer,char *line MY_ATTRIBUTE((unused)))
 
 	/* ARGSUSED */
 static int
-com_charset(String *buffer MY_ATTRIBUTE((unused)), char *line)
+com_charset(String *buffer __attribute__((unused)), char *line)
 {
   char buff[256], *param;
   const CHARSET_INFO *new_cs;
@@ -3573,7 +3566,7 @@ com_charset(String *buffer MY_ATTRIBUTE((unused)), char *line)
 
 
 static int
-com_go(String *buffer,char *line MY_ATTRIBUTE((unused)))
+com_go(String *buffer,char *line __attribute__((unused)))
 {
   char		buff[200]; /* about 110 chars used so far */
   char		time_buff[52+3+1]; /* time max + space&parens + NUL */
@@ -3683,8 +3676,7 @@ com_go(String *buffer,char *line MY_ATTRIBUTE((unused)))
 	  print_table_data_html(result);
 	else if (opt_xml)
 	  print_table_data_xml(result);
-        else if (vertical || (auto_vertical_output &&
-                (terminal_width < get_result_width(result))))
+  else if (vertical || (auto_vertical_output && (terminal_width < get_result_width(result))))
 	  print_table_data_vertically(result);
 	else if (opt_silent && verbose <= 2 && !output_tables)
 	  print_tab_data(result);
@@ -3905,41 +3897,6 @@ print_field_types(MYSQL_RES *result)
 }
 
 
-/* Used to determine if we should invoke print_as_hex for this field */
-
-static bool
-is_binary_field(MYSQL_FIELD *field)
-{
-  if ((field->charsetnr == 63) &&
-      (field->type == MYSQL_TYPE_BIT ||
-       field->type == MYSQL_TYPE_BLOB ||
-       field->type == MYSQL_TYPE_LONG_BLOB ||
-       field->type == MYSQL_TYPE_MEDIUM_BLOB ||
-       field->type == MYSQL_TYPE_TINY_BLOB ||
-       field->type == MYSQL_TYPE_VAR_STRING ||
-       field->type == MYSQL_TYPE_STRING ||
-       field->type == MYSQL_TYPE_VARCHAR ||
-       field->type == MYSQL_TYPE_GEOMETRY))
-    return 1;
-  return 0;
-}
-
-
-/* Print binary value as hex literal (0x ...) */
-
-static void
-print_as_hex(FILE *output_file, const char *str, ulong len, ulong total_bytes_to_send)
-{
-  const char *ptr= str, *end= ptr+len;
-  ulong i;
-  fprintf(output_file, "0x");
-  for(; ptr < end; ptr++)
-    fprintf(output_file, "%02X", *((uchar*)ptr));
-  for (i= 2*len+2; i < total_bytes_to_send; i++)
-    tee_putc((int)' ', output_file);
-}
-
-
 static void
 print_table_data(MYSQL_RES *result)
 {
@@ -3968,9 +3925,7 @@ print_table_data(MYSQL_RES *result)
       length= max<size_t>(length, field->max_length);
     if (length < 4 && !IS_NOT_NULL(field->flags))
       length=4;					// Room for "NULL"
-    if (opt_binhex && is_binary_field(field))
-      length= 2 + length * 2;
-    field->max_length=(ulong) length;
+    field->max_length=length;
     separator.fill(separator.length()+length+2,'-');
     separator.append('+');
   }
@@ -3988,7 +3943,7 @@ print_table_data(MYSQL_RES *result)
                                                     field->name + name_length);
       size_t display_length= field->max_length + name_length - numcells;
       tee_fprintf(PAGER, " %-*s |",
-                  min<int>((int) display_length, MAX_COLUMN_LENGTH),
+                  min<int>(display_length, MAX_COLUMN_LENGTH),
                   field->name);
       num_flag[off]= IS_NUM(field->type);
     }
@@ -4037,11 +3992,9 @@ print_table_data(MYSQL_RES *result)
        many extra padding-characters we should send with the printing function.
       */
       visible_length= charset_info->cset->numcells(charset_info, buffer, buffer + data_length);
-      extra_padding= (uint) (data_length - visible_length);
+      extra_padding= data_length - visible_length;
 
-      if (opt_binhex && is_binary_field(field))
-        print_as_hex(PAGER, cur[off], lengths[off], field_max_length);
-      else if (field_max_length > MAX_COLUMN_LENGTH)
+      if (field_max_length > MAX_COLUMN_LENGTH)
         tee_print_sized_data(buffer, data_length, MAX_COLUMN_LENGTH+extra_padding, FALSE);
       else
       {
@@ -4167,15 +4120,11 @@ print_table_data_html(MYSQL_RES *result)
     if (interrupted_query)
       break;
     ulong *lengths=mysql_fetch_lengths(result);
-    field= mysql_fetch_fields(result);
     (void) tee_fputs("<TR>", PAGER);
     for (uint i=0; i < mysql_num_fields(result); i++)
     {
       (void) tee_fputs("<TD>", PAGER);
-      if (opt_binhex && is_binary_field(&field[i]))
-        print_as_hex(PAGER, cur[i], lengths[i], lengths[i]);
-      else
-        xmlencode_print(cur[i], lengths[i]);
+      xmlencode_print(cur[i], lengths[i]);
       (void) tee_fputs("</TD>", PAGER);
     }
     (void) tee_fputs("</TR>", PAGER);
@@ -4211,10 +4160,7 @@ print_table_data_xml(MYSQL_RES *result)
       if (cur[i])
       {
         tee_fprintf(PAGER, "\">");
-        if (opt_binhex && is_binary_field(&fields[i]))
-          print_as_hex(PAGER, cur[i], lengths[i], lengths[i]);
-        else
-          xmlencode_print(cur[i], lengths[i]);
+        xmlencode_print(cur[i], lengths[i]);
         tee_fprintf(PAGER, "</field>\n");
       }
       else
@@ -4259,10 +4205,7 @@ print_table_data_vertically(MYSQL_RES *result)
         tee_fprintf(PAGER, "%*s: ",(int) max_length,field->name);
       if (cur[off])
       {
-        if (opt_binhex && is_binary_field(field))
-          print_as_hex(PAGER, cur[off], lengths[off], lengths[off]);
-        else
-          tee_write(PAGER, cur[off], lengths[off], MY_PRINT_SPS_0 | MY_PRINT_MB);
+        tee_write(PAGER, cur[off], lengths[off], MY_PRINT_SPS_0 | MY_PRINT_MB);
         tee_putc('\n', PAGER);
       }
       else
@@ -4371,26 +4314,19 @@ print_tab_data(MYSQL_RES *result)
   while ((cur = mysql_fetch_row(result)))
   {
     lengths=mysql_fetch_lengths(result);
-    field= mysql_fetch_fields(result);
-    if (opt_binhex && is_binary_field(&field[0]))
-      print_as_hex(PAGER, cur[0], lengths[0], lengths[0]);
-    else
-      safe_put_field(cur[0],lengths[0]);
+    safe_put_field(cur[0],lengths[0]);
     for (uint off=1 ; off < mysql_num_fields(result); off++)
     {
       (void) tee_fputs("\t", PAGER);
-      if (opt_binhex && field && is_binary_field(&field[off]))
-        print_as_hex(PAGER, cur[off], lengths[off], lengths[off]);
-      else
-        safe_put_field(cur[off], lengths[off]);
+      safe_put_field(cur[off], lengths[off]);
     }
     (void) tee_fputs("\n", PAGER);
   }
 }
 
 static int
-com_tee(String *buffer MY_ATTRIBUTE((unused)),
-        char *line MY_ATTRIBUTE((unused)))
+com_tee(String *buffer __attribute__((unused)),
+        char *line __attribute__((unused)))
 {
   char file_name[FN_REFLEN], *end, *param;
 
@@ -4432,8 +4368,8 @@ com_tee(String *buffer MY_ATTRIBUTE((unused)),
 
 
 static int
-com_notee(String *buffer MY_ATTRIBUTE((unused)),
-	  char *line MY_ATTRIBUTE((unused)))
+com_notee(String *buffer __attribute__((unused)),
+	  char *line __attribute__((unused)))
 {
   if (opt_outfile)
     end_tee();
@@ -4447,8 +4383,8 @@ com_notee(String *buffer MY_ATTRIBUTE((unused)),
 
 #ifdef USE_POPEN
 static int
-com_pager(String *buffer MY_ATTRIBUTE((unused)),
-          char *line MY_ATTRIBUTE((unused)))
+com_pager(String *buffer __attribute__((unused)),
+          char *line __attribute__((unused)))
 {
   char pager_name[FN_REFLEN], *end, *param;
 
@@ -4491,8 +4427,8 @@ com_pager(String *buffer MY_ATTRIBUTE((unused)),
 
 
 static int
-com_nopager(String *buffer MY_ATTRIBUTE((unused)),
-	    char *line MY_ATTRIBUTE((unused)))
+com_nopager(String *buffer __attribute__((unused)),
+	    char *line __attribute__((unused)))
 {
   my_stpcpy(pager, "stdout");
   opt_nopager=1;
@@ -4509,7 +4445,7 @@ com_nopager(String *buffer MY_ATTRIBUTE((unused)),
 
 #ifdef USE_POPEN
 static int
-com_edit(String *buffer,char *line MY_ATTRIBUTE((unused)))
+com_edit(String *buffer,char *line __attribute__((unused)))
 {
   char	filename[FN_REFLEN],buff[160];
   int	fd,tmp;
@@ -4553,16 +4489,16 @@ err:
 /* If arg is given, exit without errors. This happens on command 'quit' */
 
 static int
-com_quit(String *buffer MY_ATTRIBUTE((unused)),
-	 char *line MY_ATTRIBUTE((unused)))
+com_quit(String *buffer __attribute__((unused)),
+	 char *line __attribute__((unused)))
 {
   status.exit_status=0;
   return 1;
 }
 
 static int
-com_rehash(String *buffer MY_ATTRIBUTE((unused)),
-	 char *line MY_ATTRIBUTE((unused)))
+com_rehash(String *buffer __attribute__((unused)),
+	 char *line __attribute__((unused)))
 {
 #ifdef HAVE_READLINE
   build_completion_hash(1, 0);
@@ -4573,8 +4509,8 @@ com_rehash(String *buffer MY_ATTRIBUTE((unused)),
 
 #ifdef USE_POPEN
 static int
-com_shell(String *buffer MY_ATTRIBUTE((unused)),
-          char *line MY_ATTRIBUTE((unused)))
+com_shell(String *buffer __attribute__((unused)),
+          char *line __attribute__((unused)))
 {
   char *shell_cmd;
 
@@ -4601,7 +4537,7 @@ com_shell(String *buffer MY_ATTRIBUTE((unused)),
 
 
 static int
-com_print(String *buffer,char *line MY_ATTRIBUTE((unused)))
+com_print(String *buffer,char *line __attribute__((unused)))
 {
   tee_puts("--------------", stdout);
   (void) tee_fputs(buffer->c_ptr(), stdout);
@@ -4668,7 +4604,7 @@ com_connect(String *buffer, char *line)
 }
 
 
-static int com_source(String *buffer MY_ATTRIBUTE((unused)),
+static int com_source(String *buffer __attribute__((unused)),
                       char *line)
 {
   char source_name[FN_REFLEN], *end, *param;
@@ -4723,7 +4659,7 @@ static int com_source(String *buffer MY_ATTRIBUTE((unused)),
 
 	/* ARGSUSED */
 static int
-com_delimiter(String *buffer MY_ATTRIBUTE((unused)), char *line)
+com_delimiter(String *buffer __attribute__((unused)), char *line)
 {
   char buff[256], *tmp;
 
@@ -4752,7 +4688,7 @@ com_delimiter(String *buffer MY_ATTRIBUTE((unused)), char *line)
 
 	/* ARGSUSED */
 static int
-com_use(String *buffer MY_ATTRIBUTE((unused)), char *line)
+com_use(String *buffer __attribute__((unused)), char *line)
 {
   char *tmp, buff[FN_REFLEN + 1];
   int select_db;
@@ -4761,9 +4697,10 @@ com_use(String *buffer MY_ATTRIBUTE((unused)), char *line)
   memset(buff, 0, sizeof(buff));
 
   /*
-    In case of quotes used, try to get the normalized db name.
+    In case number of quotes exceed 2, we try to get
+    the normalized db name.
   */
-  if (get_quote_count(line) > 0)
+  if (get_quote_count(line) > 2)
   {
     if (normalize_dbname(line, buff, sizeof(buff)))
       return put_error(&mysql);
@@ -4909,8 +4846,8 @@ normalize_dbname(const char *line, char *buff, uint buff_size)
 }
 
 static int
-com_warnings(String *buffer MY_ATTRIBUTE((unused)),
-   char *line MY_ATTRIBUTE((unused)))
+com_warnings(String *buffer __attribute__((unused)),
+   char *line __attribute__((unused)))
 {
   show_warnings = 1;
   put_info("Show warnings enabled.",INFO_INFO);
@@ -4918,8 +4855,8 @@ com_warnings(String *buffer MY_ATTRIBUTE((unused)),
 }
 
 static int
-com_nowarnings(String *buffer MY_ATTRIBUTE((unused)),
-   char *line MY_ATTRIBUTE((unused)))
+com_nowarnings(String *buffer __attribute__((unused)),
+   char *line __attribute__((unused)))
 {
   show_warnings = 0;
   put_info("Show warnings disabled.",INFO_INFO);
@@ -4994,13 +4931,11 @@ char *get_arg(char *line, my_bool get_next_arg)
 static int
 get_quote_count(const char *line)
 {
-  int quote_count= 0;
-  const char *quote= line;
+  int quote_count;
+  const char *ptr= line;
 
-  while ((quote= strpbrk(quote, "'`\"")) != NULL) {
-    quote_count++;
-    quote++;
-  }
+  for(quote_count= 0; ptr ++ && *ptr; ptr= strpbrk(ptr, "\"\'`"))
+    quote_count ++;
 
   return quote_count;
 }
@@ -5212,8 +5147,8 @@ sql_connect(char *host,char *database,char *user,char *password,uint silent)
 
 
 static int
-com_status(String *buffer MY_ATTRIBUTE((unused)),
-	   char *line MY_ATTRIBUTE((unused)))
+com_status(String *buffer __attribute__((unused)),
+	   char *line __attribute__((unused)))
 {
   const char *status_str;
   char buff[40];
@@ -5901,7 +5836,7 @@ static void get_current_os_sudouser() {
   return;
 }
 
-static int com_prompt(String *buffer MY_ATTRIBUTE((unused)),
+static int com_prompt(String *buffer __attribute__((unused)),
                       char *line)
 {
   char *ptr=strchr(line, ' ');
@@ -5917,8 +5852,8 @@ static int com_prompt(String *buffer MY_ATTRIBUTE((unused)),
 }
 
 static int
-com_resetconnection(String *buffer MY_ATTRIBUTE((unused)),
-                    char *line MY_ATTRIBUTE((unused)))
+com_resetconnection(String *buffer __attribute__((unused)),
+                    char *line __attribute__((unused)))
 {
   int error;
   error= mysql_reset_connection(&mysql);

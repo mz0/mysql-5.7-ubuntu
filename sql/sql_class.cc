@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -67,7 +67,7 @@ using std::max;
   The following is used to initialise Table_ident with a internal
   table name
 */
-char internal_table_name[2]= "";
+char internal_table_name[2]= "*";
 char empty_c_string[1]= {0};    /* used for not defined db */
 
 LEX_STRING EMPTY_STR= { (char *) "", 0 };
@@ -77,8 +77,50 @@ LEX_CSTRING NULL_CSTR=  { NULL, 0 };
 
 const char * const THD::DEFAULT_WHERE= "field list";
 
+/****************************************************************************
+** Transaction_state definition.
+****************************************************************************/
 
-void THD::Transaction_state::backup(THD *thd)
+struct Transaction_state
+{
+  void backup(THD *thd);
+  void restore(THD *thd);
+
+  /// SQL-command.
+  enum_sql_command m_sql_command;
+
+  Query_tables_list m_query_tables_list;
+
+  /// Open-tables state.
+  Open_tables_backup m_open_tables_state;
+
+  /// SQL_MODE.
+  sql_mode_t m_sql_mode;
+
+  /// Transaction isolation level.
+  enum_tx_isolation m_tx_isolation;
+
+  /// Ha_data array.
+  Ha_data m_ha_data[MAX_HA];
+
+  /// Transaction_ctx instance.
+  Transaction_ctx *m_trx;
+
+  /// Transaction read-only state.
+  my_bool m_tx_read_only;
+
+  /// THD options.
+  ulonglong m_thd_option_bits;
+
+  /// Current transaction instrumentation.
+  PSI_transaction_locker *m_transaction_psi;
+
+  /// Server status flags.
+  uint m_server_status;
+};
+
+
+void Transaction_state::backup(THD *thd)
 {
   this->m_sql_command= thd->lex->sql_command;
   this->m_trx= thd->get_transaction();
@@ -95,7 +137,7 @@ void THD::Transaction_state::backup(THD *thd)
 }
 
 
-void THD::Transaction_state::restore(THD *thd)
+void Transaction_state::restore(THD *thd)
 {
   thd->set_transaction(this->m_trx);
 
@@ -111,6 +153,29 @@ void THD::Transaction_state::restore(THD *thd)
   thd->server_status= this->m_server_status;
   thd->lex->sql_command= this->m_sql_command;
 }
+
+/****************************************************************************
+** Attachable_trx definition.
+****************************************************************************/
+
+class THD::Attachable_trx
+{
+public:
+  Attachable_trx(THD *thd);
+  ~Attachable_trx();
+
+private:
+  /// THD instance.
+  THD *m_thd;
+
+  /// Transaction state data.
+  Transaction_state m_trx_state;
+
+private:
+  Attachable_trx(const Attachable_trx &);
+  Attachable_trx &operator =(const Attachable_trx &);
+};
+
 
 THD::Attachable_trx::Attachable_trx(THD *thd)
  :m_thd(thd)
@@ -164,11 +229,6 @@ THD::Attachable_trx::Attachable_trx(THD *thd)
   m_thd->variables.option_bits|= OPTION_AUTOCOMMIT;
   m_thd->variables.option_bits&= ~OPTION_NOT_AUTOCOMMIT;
   m_thd->variables.option_bits&= ~OPTION_BEGIN;
-
-  // Possible parent's involvement to multi-statement transaction is masked
-
-  m_thd->server_status&= ~SERVER_STATUS_IN_TRANS;
-  m_thd->server_status&= ~SERVER_STATUS_IN_TRANS_READONLY;
 
   // Reset SQL_MODE during system operations.
 
@@ -225,13 +285,12 @@ THD::Attachable_trx::~Attachable_trx()
   }
 }
 
-
 /****************************************************************************
 ** User variables
 ****************************************************************************/
 
 extern "C" uchar *get_var_key(user_var_entry *entry, size_t *length,
-                              my_bool not_used MY_ATTRIBUTE((unused)))
+                              my_bool not_used __attribute__((unused)))
 {
   *length= entry->entry_name.length();
   return (uchar*) entry->entry_name.ptr();
@@ -873,7 +932,7 @@ THD* thd_tx_arbitrate(THD *requestor, THD* holder)
 
 int thd_tx_is_dd_trx(const THD *thd)
 {
-  return (int) thd->is_attachable_ro_transaction_active();
+  return (int) thd->is_attachable_transaction_active();
 }
 
 extern "C"
@@ -1061,14 +1120,12 @@ THD::THD(bool enable_plugins)
    initial_status_var(NULL),
    status_var_aggregated(false),
    query_plan(this),
-   m_current_stage_key(0),
    current_mutex(NULL),
    current_cond(NULL),
    in_sub_stmt(0),
    fill_status_recursion_level(0),
    fill_variables_recursion_level(0),
    binlog_row_event_extra_data(NULL),
-   skip_readonly_check(false),
    binlog_unsafe_warning_flags(0),
    binlog_table_maps(0),
    binlog_accessed_db_names(NULL),
@@ -1119,7 +1176,7 @@ THD::THD(bool enable_plugins)
    m_query_rewrite_plugin_da(false),
    m_query_rewrite_plugin_da_ptr(&m_query_rewrite_plugin_da),
    m_stmt_da(&main_da),
-   duplicate_slave_id(false),
+   duplicate_slave_uuid(false),
    is_a_srv_session_thd(false)
 {
   main_lex.reset();
@@ -1254,7 +1311,7 @@ THD::THD(bool enable_plugins)
 
 void THD::set_transaction(Transaction_ctx *transaction_ctx)
 {
-  DBUG_ASSERT(is_attachable_ro_transaction_active());
+  DBUG_ASSERT(is_attachable_transaction_active());
 
   delete m_transaction.release();
   m_transaction.reset(transaction_ctx);
@@ -1408,8 +1465,7 @@ struct timeval THD::query_start_timeval_trunc(uint decimals)
 Sql_condition* THD::raise_condition(uint sql_errno,
                                     const char* sqlstate,
                                     Sql_condition::enum_severity_level level,
-                                    const char* msg,
-                                    bool use_condition_handler)
+                                    const char* msg)
 {
   DBUG_ENTER("THD::raise_condition");
 
@@ -1425,8 +1481,7 @@ Sql_condition* THD::raise_condition(uint sql_errno,
   if (sqlstate == NULL)
    sqlstate= mysql_errno_to_sqlstate(sql_errno);
 
-  if (use_condition_handler &&
-      handle_condition(sql_errno, sqlstate, &level, msg))
+  if (handle_condition(sql_errno, sqlstate, &level, msg))
     DBUG_RETURN(NULL);
 
   if (level == Sql_condition::SL_NOTE || level == Sql_condition::SL_WARNING)
@@ -1746,14 +1801,6 @@ void THD::cleanup(void)
   my_hash_free(&user_vars);
   mysql_mutex_unlock(&LOCK_thd_data);
 
-  /*
-    When we call drop table for temporary tables, the
-    user_var_events container is not cleared this might
-    cause error if the container was filled before the
-    drop table command is called.
-    So call this before calling close_temporary_tables.
-  */
-  user_var_events.clear();
   close_temporary_tables(this);
   sp_cache_clear(&sp_proc_cache);
   sp_cache_clear(&sp_func_cache);
@@ -3306,7 +3353,7 @@ err:
 ***************************************************************************/
 
 
-int Query_result_dump::prepare(List<Item> &list MY_ATTRIBUTE((unused)),
+int Query_result_dump::prepare(List<Item> &list __attribute__((unused)),
                                SELECT_LEX_UNIT *u)
 {
   unit= u;
@@ -3455,7 +3502,7 @@ C_MODE_START
 
 static uchar *
 get_statement_id_as_hash_key(const uchar *record, size_t *key_length,
-                             my_bool not_used MY_ATTRIBUTE((unused)))
+                             my_bool not_used __attribute__((unused)))
 {
   const Prepared_statement *statement= (const Prepared_statement *) record;
   *key_length= sizeof(statement->id);
@@ -3468,7 +3515,7 @@ static void delete_statement_as_hash_key(void *key)
 }
 
 static uchar *get_stmt_name_hash_key(Prepared_statement *entry, size_t *length,
-                                     my_bool not_used MY_ATTRIBUTE((unused)))
+                                     my_bool not_used __attribute__((unused)))
 {
   *length= entry->name().length;
   return reinterpret_cast<uchar *>(const_cast<char *>(entry->name().str));
@@ -3748,7 +3795,7 @@ void THD::restore_backup_open_tables_state(Open_tables_backup *backup)
 }
 
 
-void THD::begin_attachable_ro_transaction()
+void THD::begin_attachable_transaction()
 {
   DBUG_ASSERT(!m_attachable_trx);
 
@@ -3774,7 +3821,7 @@ void THD::end_attachable_transaction()
 extern "C" int thd_killed(const MYSQL_THD thd)
 {
   if (thd == NULL)
-    return current_thd != NULL ? current_thd->killed : 0;
+    return current_thd->killed;
   return thd->killed;
 }
 
@@ -4105,13 +4152,6 @@ void THD::reset_sub_statement_state(Sub_statement_state *backup,
   cuted_fields= 0;
   get_transaction()->m_savepoints= 0;
   first_successful_insert_id_in_cur_stmt= 0;
-
-  /* Reset savepoint on transaction write set */
-  if (is_current_stmt_binlog_row_enabled_with_write_set_extraction())
-  {
-      get_transaction()->get_transaction_write_set_ctx()
-          ->reset_savepoint_list();
-  }
 }
 
 
@@ -4181,14 +4221,6 @@ void THD::restore_sub_statement_state(Sub_statement_state *backup)
   */
   inc_examined_row_count(backup->examined_row_count);
   cuted_fields+=       backup->cuted_fields;
-
-  /* Restore savepoint on transaction write set */
-  if (is_current_stmt_binlog_row_enabled_with_write_set_extraction())
-  {
-      get_transaction()->get_transaction_write_set_ctx()
-          ->restore_savepoint_list();
-  }
-
   DBUG_VOID_RETURN;
 }
 
@@ -4760,48 +4792,17 @@ void THD::claim_memory_ownership()
 }
 
 
-void THD::rpl_detach_engine_ha_data()
+bool THD::binlog_applier_need_detach_trx()
 {
-#ifdef HAVE_REPLICATION
-  Relay_log_info *rli=
-    is_binlog_applier() ? rli_fake : (slave_thread ? rli_slave : NULL);
-
-  DBUG_ASSERT(!rli_fake  || !rli_fake-> is_engine_ha_data_detached);
-  DBUG_ASSERT(!rli_slave || !rli_slave->is_engine_ha_data_detached);
-
-  if (rli)
-    rli->detach_engine_ha_data(this);
-#endif
+  return is_binlog_applier() ? rli_fake->is_native_trx_detached= true : false;
 };
 
 
-bool THD::rpl_unflag_detached_engine_ha_data()
+bool THD::binlog_applier_has_detached_trx()
 {
-#ifdef HAVE_REPLICATION
-  Relay_log_info *rli=
-    is_binlog_applier() ? rli_fake : (slave_thread ? rli_slave : NULL);
-  return rli ? rli->unflag_detached_engine_ha_data() : false;
-#else
-  return false;
-#endif
-}
+  bool rc= is_binlog_applier() && rli_fake->is_native_trx_detached;
 
-/**
-  Determine if binlogging is disabled for this session
-  @retval 0 if the current statement binlogging is disabled
-  (could be because of binlog closed/binlog option
-  is set to false).
-  @retval 1 if the current statement will be binlogged
-*/
-bool THD::is_current_stmt_binlog_disabled() const
-{
-  return (!(variables.option_bits & OPTION_BIN_LOG) ||
-          !mysql_bin_log.is_open());
-}
-
-bool THD::is_current_stmt_binlog_row_enabled_with_write_set_extraction() const
-{
-  return ((variables.transaction_write_set_extraction != HASH_ALGORITHM_OFF) &&
-          is_current_stmt_binlog_format_row() &&
-          !is_current_stmt_binlog_disabled());
+  if (rc)
+    rli_fake->is_native_trx_detached= false;
+  return rc;
 }

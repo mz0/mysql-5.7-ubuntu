@@ -1,5 +1,5 @@
 #ifndef BINLOG_H_INCLUDED
-/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,14 +16,12 @@
 
 #define BINLOG_H_INCLUDED
 
-#include "sql_class.h"
 #include "my_global.h"
 #include "m_string.h"                  // llstr
 #include "binlog_event.h"              // enum_binlog_checksum_alg
 #include "mysqld.h"                    // opt_relay_logname
 #include "tc_log.h"                    // TC_LOG
 #include "atomic_class.h"
-#include "rpl_gtid.h"                  // Gtid_set, Sid_map
 
 class Relay_log_info;
 class Master_info;
@@ -108,11 +106,7 @@ public:
       return m_first == NULL;
     }
 
-    /**
-      Append a linked list of threads to the queue.
-      @retval true The queue was empty before this operation.
-      @retval false The queue was non-empty before this operation.
-    */
+    /** Append a linked list of threads to the queue */
     bool append(THD *first);
 
     /**
@@ -152,12 +146,7 @@ public:
 
     /** Lock for protecting the queue. */
     mysql_mutex_t m_lock;
-    /*
-      This attribute did not have the desired effect, at least not according
-      to -fsanitize=undefined with gcc 5.2.1
-      Also: it fails to compile with gcc 7.2
-     */
-  }; // MY_ATTRIBUTE((aligned(CPU_LEVEL1_DCACHE_LINESIZE)));
+  } __attribute__((aligned(CPU_LEVEL1_DCACHE_LINESIZE)));
 
 public:
   Stage_manager()
@@ -283,7 +272,7 @@ public:
                     session is waiting on
     @param stage    which stage queue size to compare count against.
    */
-  void wait_count_or_timeout(ulong count, ulong usec, StageID stage);
+  time_t wait_count_or_timeout(ulong count, time_t usec, StageID stage);
 
   void signal_done(THD *queue);
 
@@ -615,16 +604,14 @@ public:
                                       const char **errmsg);
 
   /**
-    Reads the set of all GTIDs in the binary/relay log, and the set
-    of all lost GTIDs in the binary log, and stores each set in
-    respective argument.
+    Reads the set of all GTIDs in the binary log, and the set of all
+    lost GTIDs in the binary log, and stores each set in respective
+    argument.
 
-    @param gtid_set Will be filled with all GTIDs in this binary/relay
-    log.
+    @param gtid_set Will be filled with all GTIDs in this binary log.
     @param lost_groups Will be filled with all GTIDs in the
     Previous_gtids_log_event of the first binary log that has a
-    Previous_gtids_log_event. This is requested to binary logs but not
-    to relay logs.
+    Previous_gtids_log_event.
     @param verify_checksum If true, checksums will be checked.
     @param need_lock If true, LOCK_log, LOCK_index, and
     global_sid_lock->wrlock are acquired; otherwise they are asserted
@@ -813,14 +800,6 @@ public:
   bool write_event(Log_event* event_info);
   bool write_cache(THD *thd, class binlog_cache_data *binlog_cache_data,
                    class Binlog_event_writer *writer);
-  /**
-    Assign automatic generated GTIDs for all commit group threads in the flush
-    stage having gtid_next.type == AUTOMATIC_GROUP.
-
-    @param first_seen The first thread seen entering the flush stage.
-    @return Returns false if succeeds, otherwise true is returned.
-  */
-  bool assign_automatic_gtids_to_flush_group(THD *first_seen);
   bool write_gtid(THD *thd, binlog_cache_data *cache_data,
                   class Binlog_event_writer *writer);
 
@@ -845,8 +824,7 @@ public:
   bool write_incident(THD *thd, bool need_lock_log,
                       const char* err_msg,
                       bool do_flush_and_sync= true);
-  bool write_incident(Incident_log_event *ev, THD *thd,
-                      bool need_lock_log,
+  bool write_incident(Incident_log_event *ev, bool need_lock_log,
                       const char* err_msg,
                       bool do_flush_and_sync= true);
 
@@ -905,7 +883,7 @@ public:
   int purge_index_entry(THD *thd, ulonglong *decrease_log_space,
                         bool need_lock_index);
   bool reset_logs(THD* thd, bool delete_only= false);
-  void close(uint exiting, bool need_lock_log, bool need_lock_index);
+  void close(uint exiting);
 
   // iterating through the log index file
   int find_log_pos(LOG_INFO* linfo, const char* log_name,
@@ -940,28 +918,6 @@ public:
   mysql_mutex_t* get_binlog_end_pos_lock() { return &LOCK_binlog_end_pos; }
   void lock_binlog_end_pos() { mysql_mutex_lock(&LOCK_binlog_end_pos); }
   void unlock_binlog_end_pos() { mysql_mutex_unlock(&LOCK_binlog_end_pos); }
-
-  /**
-    Deep copy global_sid_map to @param sid_map and
-    gtid_state->get_executed_gtids() to @param gtid_set
-    Both operations are done under LOCK_commit and global_sid_lock
-    protection.
-
-    @param[out] sid_map  The Sid_map to which global_sid_map will
-                         be copied.
-    @param[out] gtid_set The Gtid_set to which gtid_executed will
-                         be copied.
-
-    @return the operation status
-      @retval 0      OK
-      @retval !=0    Error
-  */
-  int get_gtid_executed(Sid_map *sid_map, Gtid_set *gtid_set);
-
-  /*
-    True while rotating binlog, which is caused by logging Incident_log_event.
-  */
-  bool is_rotating_caused_by_incident;
 };
 
 typedef struct st_load_file_info
@@ -974,7 +930,7 @@ typedef struct st_load_file_info
 extern MYSQL_PLUGIN_IMPORT MYSQL_BIN_LOG mysql_bin_log;
 
 bool trans_has_updated_trans_table(const THD* thd);
-bool stmt_has_updated_trans_table(Ha_trx_info* ha_list);
+bool stmt_has_updated_trans_table(const THD *thd);
 bool ending_trans(THD* thd, const bool all);
 bool ending_single_stmt_trans(THD* thd, const bool all);
 bool trans_cannot_safely_rollback(const THD* thd);

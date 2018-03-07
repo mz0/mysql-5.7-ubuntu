@@ -1,7 +1,7 @@
 #ifndef ITEM_SUM_INCLUDED
 #define ITEM_SUM_INCLUDED
 
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -356,7 +356,6 @@ public:
   int8 max_arg_level;     /* max level of unbound column references          */
   int8 max_sum_func_level;/* max level of aggregation for embedded functions */
   bool quick_group;			/* If incremental update of fields */
-  st_select_lex *base_select; ///< query block where function is placed
 
 protected:  
   uint arg_count;
@@ -856,14 +855,6 @@ public:
   }
   enum Item_result result_type () const { return hybrid_type; }
   bool is_null() { update_null_value(); return null_value; }
-  bool mark_field_in_map(uchar *arg)
-  {
-    /*
-      Filesort (find_all_keys) over a temporary table collects the columns it
-      needs.
-    */
-    return Item::mark_field_in_map(pointer_cast<Mark_field *>(arg), field);
-  }
 };
 
 
@@ -1400,7 +1391,7 @@ int group_concat_key_cmp_with_distinct(const void* arg, const void* key1,
 int group_concat_key_cmp_with_order(const void* arg, const void* key1,
                                     const void* key2);
 int dump_leaf_key(void* key_arg,
-                  element_count count MY_ATTRIBUTE((unused)),
+                  element_count count __attribute__((unused)),
                   void* item_arg);
 C_MODE_END
 
@@ -1434,8 +1425,7 @@ class Item_func_group_concat : public Item_sum
   bool warning_for_row;
   bool always_null;
   bool force_copy_fields;
-  /** True if result has been written to output buffer. */
-  bool m_result_finalized;
+  bool no_appended;
   /*
     Following is 0 normal object and pointer to original one for copy
     (to correctly free resources)
@@ -1449,7 +1439,7 @@ class Item_func_group_concat : public Item_sum
                                              const void* key1,
 					     const void* key2);
   friend int dump_leaf_key(void* key_arg,
-                           element_count count MY_ATTRIBUTE((unused)),
+                           element_count count __attribute__((unused)),
 			   void* item_arg);
 
 public:

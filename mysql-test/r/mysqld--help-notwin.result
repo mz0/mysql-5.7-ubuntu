@@ -214,11 +214,6 @@ The following options may be given as the first argument:
  client that does INSERT DELAYED will wait until there is
  room in the queue again. This variable is deprecated
  along with INSERT DELAYED.
- --disable-partition-engine-check 
- Skip the check for non-natively partitioned tables during
- bootstrap. This option is deprecated along with the
- partition engine.
- (Defaults to on; use --skip-disable-partition-engine-check to disable.)
  --disabled-storage-engines=name 
  Limit CREATE TABLE for the storage engines listed
  --disconnect-on-expired-password 
@@ -361,26 +356,6 @@ The following options may be given as the first argument:
  The default size of key cache blocks
  --key-cache-division-limit=# 
  The minimum percentage of warm blocks in key cache
- --keyring-migration-destination=name 
- Keyring plugin to which the keys are migrated to. This
- option must be specified along with
- --keyring-migration-source.
- --keyring-migration-host=name 
- Connect to host.
- --keyring-migration-password[=name] 
- Password to use when connecting to server during keyring
- migration. If password value is not specified then it
- will be asked from the tty.
- --keyring-migration-port=# 
- Port number to use for connection.
- --keyring-migration-socket=name 
- The socket file to use for connection.
- --keyring-migration-source=name 
- Keyring plugin from where the keys needs to be migrated
- to. This option must be specified along with
- --keyring-migration-destination.
- --keyring-migration-user=name 
- User to login to server.
  -L, --language=name Client error messages in given language. May be given as
  a full path. Deprecated. Use --lc-messages-dir instead.
  --large-pages       Enable support for large pages
@@ -684,8 +659,6 @@ The following options may be given as the first argument:
  Maximum allowed cumulated size of stored optimizer traces
  --optimizer-trace-offset=# 
  Offset of first optimizer trace to show; see manual
- --parser-max-mem-size=# 
- Maximum amount of memory available to the parser
  --performance-schema 
  Enable the performance schema.
  (Defaults to on; use --skip-performance-schema to disable.)
@@ -879,26 +852,17 @@ The following options may be given as the first argument:
  --query-alloc-block-size=# 
  Allocation block size for query parsing and execution
  --query-cache-limit=# 
- Don't cache results that are bigger than this. This
- variable is deprecated and will be removed in a future
- release.
+ Don't cache results that are bigger than this
  --query-cache-min-res-unit=# 
- The minimum size for blocks allocated by the query cache.
- This variable is deprecated and will be removed in a
- future release.
+ The minimum size for blocks allocated by the query cache
  --query-cache-size=# 
- The memory allocated to store results from old queries.
- This variable is deprecated and will be removed in a
- future release.
+ The memory allocated to store results from old queries
  --query-cache-type=name 
  OFF = Don't cache or retrieve results. ON = Cache all
  results except SELECT SQL_NO_CACHE ... queries. DEMAND =
- Cache only SELECT SQL_CACHE ... queries. This variable is
- deprecated and will be removed in a future release.
+ Cache only SELECT SQL_CACHE ... queries
  --query-cache-wlock-invalidate 
- Invalidate queries in query cache on LOCK for write. This
- variable is deprecated and will be removed in a future
- release.
+ Invalidate queries in query cache on LOCK for write
  --query-prealloc-size=# 
  Persistent buffer for query parsing and execution
  --range-alloc-block-size=# 
@@ -1315,7 +1279,6 @@ delay-key-write ON
 delayed-insert-limit 100
 delayed-insert-timeout 300
 delayed-queue-size 1000
-disable-partition-engine-check TRUE
 disabled-storage-engines 
 disconnect-on-expired-password TRUE
 disconnect-slave-event-count 0
@@ -1355,12 +1318,6 @@ key-buffer-size 8388608
 key-cache-age-threshold 300
 key-cache-block-size 1024
 key-cache-division-limit 100
-keyring-migration-destination (No default value)
-keyring-migration-host (No default value)
-keyring-migration-port 0
-keyring-migration-socket (No default value)
-keyring-migration-source (No default value)
-keyring-migration-user (No default value)
 language MYSQL_SHAREDIR/
 large-pages FALSE
 lc-messages en_US
@@ -1389,7 +1346,7 @@ log-syslog-facility daemon
 log-syslog-include-pid TRUE
 log-syslog-tag 
 log-tc tc.log
-log-tc-size #####
+log-tc-size 24576
 log-throttle-queries-not-using-indexes 0
 log-timestamps UTC
 log-warnings 0
@@ -1456,7 +1413,6 @@ optimizer-trace-features greedy_search=on,range_optimizer=on,dynamic_range=on,re
 optimizer-trace-limit 1
 optimizer-trace-max-mem-size 16384
 optimizer-trace-offset -1
-parser-max-mem-size 18446744073709551615
 performance-schema TRUE
 performance-schema-accounts-size -1
 performance-schema-consumer-events-stages-current FALSE
@@ -1494,7 +1450,7 @@ performance-schema-max-file-instances -1
 performance-schema-max-index-stat -1
 performance-schema-max-memory-classes 320
 performance-schema-max-metadata-locks -1
-performance-schema-max-mutex-classes 210
+performance-schema-max-mutex-classes 200
 performance-schema-max-mutex-instances -1
 performance-schema-max-prepared-statements-instances -1
 performance-schema-max-program-instances -1
@@ -1527,7 +1483,7 @@ query-cache-type OFF
 query-cache-wlock-invalidate FALSE
 query-prealloc-size 8192
 range-alloc-block-size 4096
-range-optimizer-max-mem-size 8388608
+range-optimizer-max-mem-size 1536000
 read-buffer-size 131072
 read-only FALSE
 read-rnd-buffer-size 262144

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -151,8 +151,7 @@ bool SELECT_LEX::prepare(THD *thd)
   }
 
   // Precompute and store the row types of NATURAL/USING joins.
-  if (leaf_table_count >= 2 &&
-      setup_natural_join_row_types(thd, join_list, &context))
+  if (setup_natural_join_row_types(thd, join_list, &context))
     DBUG_RETURN(true);
 
   Mem_root_array<Item_exists_subselect *, true>
@@ -1103,15 +1102,7 @@ bool SELECT_LEX::setup_wild(THD *thd)
       const uint elem= fields_list.elements;
       const bool any_privileges= item_field->any_privileges;
       Item_subselect *subsel= master_unit()->item;
-
-      /*
-        In case of EXISTS(SELECT * ... HAVING ...), don't use this
-        transformation. The columns in HAVING will need to resolve to the
-        select list. Replacing * with 1 effectively eliminates this
-        possibility.
-      */
-      if (subsel && subsel->substype() == Item_subselect::EXISTS_SUBS &&
-          !having_cond())
+      if (subsel && subsel->substype() == Item_subselect::EXISTS_SUBS)
       {
         /*
           It is EXISTS(SELECT * ...) and we can replace * by any constant.
@@ -3674,8 +3665,7 @@ void SELECT_LEX::delete_unused_merged_columns(List<TABLE_LIST> *tables)
         */
         if (!item->is_derived_used() &&
             item->walk(&Item::propagate_derived_used, Item::WALK_POSTFIX, NULL))
-          item->walk(&Item::propagate_set_derived_used,
-                     Item::WALK_SUBQUERY_POSTFIX, NULL);
+          item->set_derived_used();
 
         if (!item->is_derived_used())
         {

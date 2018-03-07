@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -174,7 +174,7 @@ NOTE that this function will temporarily commit mtr and lose the
 pcur position!
 
 @return DB_SUCCESS or an error code */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 dberr_t
 row_upd_check_references_constraints(
 /*=================================*/
@@ -223,9 +223,6 @@ row_upd_check_references_constraints(
 		row_mysql_freeze_data_dictionary(trx);
 	}
 
-	DEBUG_SYNC_C_IF_THD(thr_get_trx(thr)->mysql_thd,
-			    "foreign_constraint_check_for_insert");
-
 	for (dict_foreign_set::iterator it = table->referenced_set.begin();
 	     it != table->referenced_set.end();
 	     ++it) {
@@ -253,42 +250,14 @@ row_upd_check_references_constraints(
 					FALSE, FALSE, DICT_ERR_IGNORE_NONE);
 			}
 
-			/** dict_operation_lock is held both here and by truncate operations.
-			If a truncate is in process by another concurrent thread,
-			there can be 2 conditions possible:
-			1) row_truncate_table_for_mysql() is not yet called.
-			2) Truncate releases dict_operation_lock
-			during eviction of pages from buffer pool
-			for a file-per-table tablespace.
-
-			In case of (1), truncate will wait for FK operation
-			to complete.
-			In case of (2), truncate will be rolled forward even
-			if it is interrupted. So if the foreign table is
-			undergoing a truncate, ignore the FK check. */
-
-			if (foreign_table != NULL
-			    && fil_space_is_being_truncated(
-						foreign_table->space)) {
-				continue;
-			}
-
 			/* NOTE that if the thread ends up waiting for a lock
 			we will release dict_operation_lock temporarily!
 			But the counter on the table protects 'foreign' from
 			being dropped while the check is running. */
 
-
-                        if (foreign_table) {
-				os_atomic_increment_ulint(&foreign_table->n_foreign_key_checks_running, 1);
-			}
-
 			err = row_ins_check_foreign_constraint(
 				FALSE, foreign, table, entry, thr);
 
-                        if (foreign_table) {
-				os_atomic_decrement_ulint(&foreign_table->n_foreign_key_checks_running, 1);
-			}
 			if (ref_table != NULL) {
 				dict_table_close(ref_table, FALSE, FALSE);
 			}
@@ -309,6 +278,11 @@ func_exit:
 	mem_heap_free(heap);
 
 	DEBUG_SYNC_C("foreign_constraint_check_for_update_done");
+
+	DBUG_EXECUTE_IF("row_upd_cascade_lock_wait_err",
+		err = DB_LOCK_WAIT;
+		DBUG_SET("-d,row_upd_cascade_lock_wait_err"););
+
 	DBUG_RETURN(err);
 }
 
@@ -424,13 +398,6 @@ row_upd_changes_field_size_or_external(
 
 	for (i = 0; i < n_fields; i++) {
 		upd_field = upd_get_nth_field(update, i);
-
-		/* We should ignore virtual field if the index is not
-		a virtual index */
-		if (upd_fld_is_virtual_col(upd_field)
-		    && dict_index_has_virtual(index) != DICT_VIRTUAL) {
-			continue;
-		}
 
 		new_val = &(upd_field->new_val);
 		new_len = dfield_get_len(new_val);
@@ -580,7 +547,7 @@ row_upd_write_sys_vals_to_log(
 	roll_ptr_t	roll_ptr,/*!< in: roll ptr of the undo log record */
 	byte*		log_ptr,/*!< pointer to a buffer of size > 20 opened
 				in mlog */
-	mtr_t*		mtr MY_ATTRIBUTE((unused))) /*!< in: mtr */
+	mtr_t*		mtr __attribute__((unused))) /*!< in: mtr */
 {
 	ut_ad(dict_index_is_clust(index));
 	ut_ad(mtr);
@@ -677,13 +644,7 @@ row_upd_index_write_log(
 
 		len = dfield_get_len(new_val);
 
-		/* If this is a virtual column, mark it using special
-		field_no */
-		ulint	field_no = upd_fld_is_virtual_col(upd_field)
-				   ? REC_MAX_N_FIELDS + upd_field->field_no
-				   : upd_field->field_no;
-
-		log_ptr += mach_write_compressed(log_ptr, field_no);
+		log_ptr += mach_write_compressed(log_ptr, upd_field->field_no);
 		log_ptr += mach_write_compressed(log_ptr, len);
 
 		if (len != UNIV_SQL_NULL) {
@@ -757,13 +718,6 @@ row_upd_index_parse(
 		if (ptr == NULL) {
 
 			return(NULL);
-		}
-
-		/* Check if this is a virtual column, mark the prtype
-		if that is the case */
-		if (field_no >= REC_MAX_N_FIELDS) {
-			new_val->type.prtype |= DATA_VIRTUAL;
-			field_no -= REC_MAX_N_FIELDS;
 		}
 
 		upd_field->field_no = field_no;
@@ -991,8 +945,7 @@ row_upd_build_difference_binary(
 
 			dfield_t*	vfield = innobase_get_computed_value(
 				update->old_vrow, col, index,
-				&v_heap, heap, NULL, thd, mysql_table,
-				NULL, NULL, NULL);
+				&v_heap, heap, NULL, thd, mysql_table);
 
 			if (!dfield_data_is_binary_equal(
 				dfield, vfield->len,
@@ -1325,16 +1278,7 @@ row_upd_replace_vcol(
 		/* If there is no index on the column, do not bother for
 		value update */
 		if (!col->m_col.ord_part) {
-			dict_index_t*	clust_index
-				= dict_table_get_first_index(table);
-
-			/* Skip the column if there is no online alter
-			table in progress or it is not being indexed
-			in new table */
-			if (!dict_index_is_online_ddl(clust_index)
-			    || !row_log_col_is_indexed(clust_index, col_no)) {
-				continue;
-			}
+			continue;
 		}
 
 		dfield = dtuple_get_nth_v_field(row, col_no);
@@ -1992,6 +1936,7 @@ row_upd_store_v_row(
 						cascade update. And virtual
 						column can't be affected,
 						so it is Ok to set it to NULL */
+						ut_ad(!node->cascade_top);
 						dfield_set_null(dfield);
 					} else {
 						dfield_t*       vfield
@@ -2006,8 +1951,7 @@ row_upd_store_v_row(
 					innobase_get_computed_value(
 						node->row, col, index,
 						&heap, node->heap, NULL,
-						thd, mysql_table, NULL,
-						NULL, NULL);
+						thd, mysql_table);
 				}
 			}
 		}
@@ -2109,7 +2053,7 @@ srv_mbr_print(const byte* data)
 Updates a secondary index entry of a row.
 @return DB_SUCCESS if operation successfully completed, else error
 code or DB_LOCK_WAIT */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 dberr_t
 row_upd_sec_index_entry(
 /*====================*/
@@ -2340,7 +2284,7 @@ Updates the secondary index record if it is changed in the row update or
 deletes it if this is a delete.
 @return DB_SUCCESS if operation successfully completed, else error
 code or DB_LOCK_WAIT */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 dberr_t
 row_upd_sec_step(
 /*=============*/
@@ -2458,7 +2402,7 @@ fields of the clustered index record change. This should be quite rare in
 database applications.
 @return DB_SUCCESS if operation successfully completed, else error
 code or DB_LOCK_WAIT */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 dberr_t
 row_upd_clust_rec_by_insert(
 /*========================*/
@@ -2585,7 +2529,7 @@ Updates a clustered index record of a row when the ordering fields do
 not change.
 @return DB_SUCCESS if operation successfully completed, else error
 code or DB_LOCK_WAIT */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 dberr_t
 row_upd_clust_rec(
 /*==============*/
@@ -2732,7 +2676,7 @@ func_exit:
 /***********************************************************//**
 Delete marks a clustered index record.
 @return DB_SUCCESS if operation successfully completed, else error code */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 dberr_t
 row_upd_del_mark_clust_rec(
 /*=======================*/
@@ -2786,7 +2730,7 @@ row_upd_del_mark_clust_rec(
 Updates the clustered index record.
 @return DB_SUCCESS if operation successfully completed, DB_LOCK_WAIT
 in case of a lock wait, else error code */
-static MY_ATTRIBUTE((warn_unused_result))
+static __attribute__((nonnull, warn_unused_result))
 dberr_t
 row_upd_clust_step(
 /*===============*/
@@ -3206,4 +3150,60 @@ error_handling:
 	DBUG_RETURN(thr);
 }
 
+#ifndef DBUG_OFF
+
+/** Ensure that the member cascade_upd_nodes has only one update node
+for each of the tables.  This is useful for testing purposes. */
+void upd_node_t::check_cascade_only_once()
+{
+	DBUG_ENTER("upd_node_t::check_cascade_only_once");
+
+	dbug_trace();
+
+	for (upd_cascade_t::const_iterator i = cascade_upd_nodes->begin();
+	     i != cascade_upd_nodes->end(); ++i) {
+
+		const upd_node_t*	update_node = *i;
+		std::string	table_name(update_node->table->name.m_name);
+		ulint	count = 0;
+
+		for (upd_cascade_t::const_iterator j
+			= cascade_upd_nodes->begin();
+		     j != cascade_upd_nodes->end(); ++j) {
+
+			const upd_node_t*	node = *j;
+
+			if (table_name == node->table->name.m_name) {
+				DBUG_ASSERT(count++ == 0);
+			}
+		}
+	}
+
+	DBUG_VOID_RETURN;
+}
+
+/** Print information about this object into the trace log file. */
+void upd_node_t::dbug_trace()
+{
+	DBUG_ENTER("upd_node_t::dbug_trace");
+
+	for (upd_cascade_t::const_iterator i = cascade_upd_nodes->begin();
+	     i != cascade_upd_nodes->end(); ++i) {
+
+		const upd_node_t*	update_node = *i;
+		DBUG_LOG("upd_node_t", "cascade_upd_nodes: Cascade to table: "
+			 << update_node->table->name);
+	}
+
+	for (upd_cascade_t::const_iterator j = new_upd_nodes->begin();
+	     j != new_upd_nodes->end(); ++j) {
+
+		const upd_node_t*	update_node = *j;
+		DBUG_LOG("upd_node_t", "new_upd_nodes: Cascade to table: "
+			 << update_node->table->name);
+	}
+
+	DBUG_VOID_RETURN;
+}
+#endif /* !DBUG_OFF */
 #endif /* !UNIV_HOTBACKUP */

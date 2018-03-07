@@ -1,4 +1,4 @@
--- Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+-- Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
 --
 -- This program is free software; you can redistribute it and/or modify
 -- it under the terms of the GNU General Public License as published by
@@ -123,6 +123,7 @@ ALTER TABLE tables_priv
   MODIFY Db char(64) NOT NULL default '',
   MODIFY User char(32) NOT NULL default '',
   MODIFY Table_name char(64) NOT NULL default '',
+  MODIFY Grantor char(77) NOT NULL default '',
   ENGINE=MyISAM,
   CONVERT TO CHARACTER SET utf8 COLLATE utf8_bin;
 
@@ -134,9 +135,6 @@ ALTER TABLE tables_priv
                         'Create View','Show view','Trigger')
     COLLATE utf8_general_ci DEFAULT '' NOT NULL,
   COMMENT='Table privileges';
-
-ALTER TABLE tables_priv
-  MODIFY Grantor char(93) NOT NULL default '';
 
 #
 # columns_priv
@@ -198,12 +196,6 @@ ADD max_questions int(11) NOT NULL DEFAULT 0 AFTER x509_subject,
 ADD max_updates   int(11) unsigned NOT NULL DEFAULT 0 AFTER max_questions,
 ADD max_connections int(11) unsigned NOT NULL DEFAULT 0 AFTER max_updates;
 
-#
-# Update proxies_priv definition.
-#
-ALTER TABLE proxies_priv MODIFY User char(32) binary DEFAULT '' NOT NULL;
-ALTER TABLE proxies_priv MODIFY Proxied_user char(32) binary DEFAULT '' NOT NULL;
-ALTER TABLE proxies_priv MODIFY Grantor char(93) DEFAULT '' NOT NULL;
 
 #
 #  Add Create_tmp_table_priv and Lock_tables_priv to db
@@ -420,8 +412,6 @@ ALTER TABLE procs_priv
 ALTER TABLE procs_priv
   MODIFY Timestamp timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER Proc_priv;
 
-ALTER TABLE procs_priv
-  MODIFY Grantor char(93) DEFAULT '' NOT NULL;
 #
 # proc
 #
@@ -479,7 +469,7 @@ ALTER TABLE proc CONVERT TO CHARACTER SET utf8;
 ALTER TABLE proc  MODIFY db
                          char(64) collate utf8_bin DEFAULT '' NOT NULL,
                   MODIFY definer
-                         char(93) collate utf8_bin DEFAULT '' NOT NULL,
+                         char(77) collate utf8_bin DEFAULT '' NOT NULL,
                   MODIFY comment
                          text collate utf8_bin DEFAULT '' NOT NULL;
 
@@ -623,7 +613,6 @@ ALTER TABLE event ADD body_utf8 longblob DEFAULT NULL
                       AFTER db_collation;
 ALTER TABLE event MODIFY body_utf8 longblob DEFAULT NULL;
 
-ALTER TABLE event MODIFY definer char(93) CHARACTER SET utf8 COLLATE utf8_bin NOT NULL default '';
 
 #
 # TRIGGER privilege
@@ -800,6 +789,7 @@ flush privileges;
 
 ALTER TABLE slave_master_info ADD Ssl_crl TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'The file used for the Certificate Revocation List (CRL)';
 ALTER TABLE slave_master_info ADD Ssl_crlpath TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'The path used for Certificate Revocation List (CRL) files';
+ALTER TABLE slave_master_info ADD Tls_version TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'Tls version';
 ALTER TABLE slave_master_info STATS_PERSISTENT=0;
 ALTER TABLE slave_worker_info STATS_PERSISTENT=0;
 ALTER TABLE slave_relay_log_info STATS_PERSISTENT=0;
@@ -823,15 +813,6 @@ ALTER TABLE slave_worker_info
   ADD Channel_name CHAR(64) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL DEFAULT '' COMMENT 'The channel on which the slave is connected to a source. Used in Multisource Replication',
   DROP PRIMARY KEY,
   ADD PRIMARY KEY(Channel_name, Id);
-
-# The Tls_version field at slave_master_info should be added after the Channel_name field
-ALTER TABLE slave_master_info ADD Tls_version TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'Tls version';
-
-# If the order of columns Channel_name and Tls_version is wrong, this will correct the order
-# in slave_master_info table.
-ALTER TABLE slave_master_info
-  MODIFY COLUMN Tls_version TEXT CHARACTER SET utf8 COLLATE utf8_bin COMMENT 'Tls version'
-  AFTER Channel_name;
 
 SET @have_innodb= (SELECT COUNT(engine) FROM information_schema.engines WHERE engine='InnoDB' AND support != 'NO');
 SET @str=IF(@have_innodb <> 0, "ALTER TABLE innodb_table_stats STATS_PERSISTENT=0", "SET @dummy = 0");
@@ -939,47 +920,3 @@ SET @str = IF(@had_distributed_proxies_priv > 0, @cmd, "SET @dummy = 0");
 PREPARE stmt FROM @str;
 EXECUTE stmt;
 DROP PREPARE stmt;
-
---
--- MySQL 8.0 adds default_value column to cost tables
--- In case of downgrade to 5.7, remove these columns
---
-
--- Drop column default_value from mysql.server_cost if it exists
-SET @have_server_cost_default =
-  (SELECT COUNT(column_name) FROM information_schema.columns
-     WHERE table_schema = 'mysql' AND table_name = 'server_cost' AND
-           column_name = 'default_value');
-SET @cmd="ALTER TABLE mysql.server_cost DROP COLUMN default_value";
-SET @str = IF(@have_server_cost_default > 0, @cmd, "SET @dummy = 0");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
--- Drop column default_value from mysql.engine_cost if it exists
-SET @have_engine_cost_default =
-  (SELECT COUNT(column_name) FROM information_schema.columns
-     WHERE table_schema = 'mysql' AND table_name = 'engine_cost' AND
-           column_name = 'default_value');
-SET @cmd="ALTER TABLE mysql.engine_cost DROP COLUMN default_value";
-SET @str = IF(@have_engine_cost_default > 0, @cmd, "SET @dummy = 0");
-PREPARE stmt FROM @str;
-EXECUTE stmt;
-DROP PREPARE stmt;
-
-#
-# SQL commands for creating the user in MySQL Server which can be used by the
-# internal server session service
-# Notes:
-# This user is disabled for login
-# This user has super privileges and select privileges into performance schema
-# tables the mysql.user table.
-#
-
-INSERT IGNORE INTO mysql.user VALUES ('localhost','mysql.session','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','Y','N','N','N','N','N','N','N','N','N','N','N','N','N','','','','',0,0,0,0,'mysql_native_password','*THISISNOTAVALIDPASSWORDTHATCANBEUSEDHERE','N',CURRENT_TIMESTAMP,NULL,'Y');
-
-INSERT IGNORE INTO mysql.tables_priv VALUES ('localhost', 'mysql', 'mysql.session', 'user', 'root\@localhost', CURRENT_TIMESTAMP, 'Select', '');
-
-INSERT IGNORE INTO mysql.db VALUES ('localhost', 'performance_schema', 'mysql.session','Y','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N','N');
-
-FLUSH PRIVILEGES;

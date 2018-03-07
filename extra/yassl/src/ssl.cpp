@@ -161,7 +161,7 @@ int read_file(SSL_CTX* ctx, const char* file, int format, CertType type)
             TaoCrypt::DSA_PrivateKey dsaKey;
             dsaKey.Initialize(dsaSource);
 
-            if (dsaSource.GetError().What()) {
+            if (rsaSource.GetError().What()) {
                 // neither worked
                 ret = SSL_FAILURE;
             }
@@ -645,9 +645,7 @@ X509* X509_Copy(X509 *x)
 
     X509 *newX509 = NEW_YS X509(issuer->GetName(), issuer->GetLength(),
         subject->GetName(), subject->GetLength(),
-        before, after,
-        issuer->GetCnPosition(), issuer->GetCnLength(),
-        subject->GetCnPosition(), subject->GetCnLength());
+        before, after);
 
     return newX509;
 }
@@ -715,10 +713,7 @@ X509* PEM_read_X509(FILE *fp, X509 *x,
   afterDate.length = strlen((char *) afterDate.data) + 1;
 
   X509 *thisX509 = NEW_YS X509(cert.GetIssuer(), iSz, cert.GetCommonName(),
-                               sSz, &beforeDate, &afterDate,
-                               cert.GetIssuerCnStart(), cert.GetIssuerCnLength(),
-                               cert.GetSubjectCnStart(), cert.GetSubjectCnLength());
-
+                               sSz, &beforeDate, &afterDate);
 
   ysDelete(ptr);
   return thisX509;
@@ -849,67 +844,40 @@ int SSL_CTX_load_verify_locations(SSL_CTX* ctx, const char* file,
         WIN32_FIND_DATA FindFileData;
         HANDLE hFind;
 
-        const int DELIMITER_SZ      = 2;
-        const int DELIMITER_STAR_SZ = 3;
-        int pathSz = (int)strlen(path);
-        int nameSz = pathSz + DELIMITER_STAR_SZ + 1; // plus 1 for terminator
-        char* name = NEW_YS char[nameSz];  // directory specification
-        memset(name, 0, nameSz);
-        strncpy(name, path, nameSz - DELIMITER_STAR_SZ - 1);
-        strncat(name, "\\*", DELIMITER_STAR_SZ);
+        char name[MAX_PATH + 1];  // directory specification
+        strncpy(name, path, MAX_PATH - 3);
+        strncat(name, "\\*", 3);
 
         hFind = FindFirstFile(name, &FindFileData);
-        if (hFind == INVALID_HANDLE_VALUE) {
-            ysArrayDelete(name);
-            return SSL_BAD_PATH;
-        }
+        if (hFind == INVALID_HANDLE_VALUE) return SSL_BAD_PATH;
 
         do {
-            if (!(FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-                int curSz = (int)strlen(FindFileData.cFileName);
-                if (pathSz + curSz + DELIMITER_SZ + 1 > nameSz) {
-                    ysArrayDelete(name);
-                    // plus 1 for terminator
-                    nameSz = pathSz + curSz + DELIMITER_SZ + 1;
-                    name = NEW_YS char[nameSz];
-                }
-                memset(name, 0, nameSz);
-                strncpy(name, path, nameSz - curSz - DELIMITER_SZ - 1);
-                strncat(name, "\\", DELIMITER_SZ);
-                strncat(name, FindFileData.cFileName,
-                                            nameSz - pathSz - DELIMITER_SZ - 1);
+            if (FindFileData.dwFileAttributes != FILE_ATTRIBUTE_DIRECTORY) {
+                strncpy(name, path, MAX_PATH - 2 - HALF_PATH);
+                strncat(name, "\\", 2);
+                strncat(name, FindFileData.cFileName, HALF_PATH);
                 ret = read_file(ctx, name, SSL_FILETYPE_PEM, CA);
             }
         } while (ret == SSL_SUCCESS && FindNextFile(hFind, &FindFileData));
 
-        ysArrayDelete(name);
         FindClose(hFind);
 
 #else   // _WIN32
+
+        const int MAX_PATH = 260;
+
         DIR* dir = opendir(path);
         if (!dir) return SSL_BAD_PATH;
 
         struct dirent* entry;
         struct stat    buf;
-        const int DELIMITER_SZ = 1;
-        int pathSz = (int)strlen(path);
-        int nameSz = pathSz + DELIMITER_SZ + 1; //plus 1 for null terminator
-        char* name = NEW_YS char[nameSz];  // directory specification
+        char           name[MAX_PATH + 1];
 
         while (ret == SSL_SUCCESS && (entry = readdir(dir))) {
-            int curSz = (int)strlen(entry->d_name);
-            if (pathSz + curSz + DELIMITER_SZ + 1 > nameSz) {
-                ysArrayDelete(name);
-                nameSz = pathSz + DELIMITER_SZ + curSz + 1;
-                name = NEW_YS char[nameSz];
-            }
-            memset(name, 0, nameSz);
-            strncpy(name, path, nameSz - curSz - 1);
-            strncat(name, "/",  DELIMITER_SZ);
-            strncat(name, entry->d_name, nameSz - pathSz - DELIMITER_SZ - 1);
-
+            strncpy(name, path, MAX_PATH - 1 - HALF_PATH);
+            strncat(name, "/", 1);
+            strncat(name, entry->d_name, HALF_PATH);
             if (stat(name, &buf) < 0) {
-                ysArrayDelete(name);
                 closedir(dir);
                 return SSL_BAD_STAT;
             }
@@ -918,7 +886,6 @@ int SSL_CTX_load_verify_locations(SSL_CTX* ctx, const char* file,
                 ret = read_file(ctx, name, SSL_FILETYPE_PEM, CA);
         }
 
-        ysArrayDelete(name);
         closedir(dir);
 
 #endif
@@ -1477,14 +1444,16 @@ int ASN1_STRING_type(ASN1_STRING *x)
 int X509_NAME_get_index_by_NID(X509_NAME* name,int nid, int lastpos)
 {
     int idx = -1;  // not found
-    int cnPos = -1;
+    const char* start = &name->GetName()[lastpos + 1];
 
     switch (nid) {
     case NID_commonName:
-         cnPos = name->GetCnPosition();
-         if (lastpos < cnPos)
-           idx = cnPos;
-         break;
+        const char* found = strstr(start, "/CN=");
+        if (found) {
+            found += 4;  // advance to str
+            idx = found - start + lastpos + 1;
+        }
+        break;
     }
 
     return idx;

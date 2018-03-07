@@ -30,10 +30,8 @@ if ($command == run)
   # Non transactional table goes first
 
   --eval XA START '$xid'
-  --disable_warnings
   INSERT INTO tm VALUES (1);
   INSERT INTO t VALUES (1);
-  --enable_warnings
   --eval XA END '$xid'
   if ($xa_prepare_opt)
   {
@@ -44,8 +42,8 @@ if ($command == run)
   # Transactional table goes first
 
   --eval XA START '$xid'
-  --disable_warnings
   INSERT INTO t VALUES (2);
+  --disable_warnings
   INSERT INTO tm VALUES (2);
   --enable_warnings
   --eval XA END '$xid'

@@ -17,33 +17,34 @@
 #define MYSQL_BUFFER_H
 
 #include "keyring_memory.h"
-#include "i_serialized_object.h"
 
-namespace keyring
+struct Buffer
 {
-
-class Buffer : public ISerialized_object
-{
-public:
   Buffer() : data(NULL)
   {
     mark_as_empty();
-  }
-  Buffer(size_t memory_size) : data(NULL)
-  {
-    reserve(memory_size);
   }
   ~Buffer()
   {
     if(data != NULL)
       delete[] data;
   }
-
-  inline void free();
-  my_bool get_next_key(IKey **key);
-  my_bool has_next_key();
-  void reserve(size_t memory_size);
-
+  inline void free()
+  {
+    if (data != NULL)
+    {
+      delete[] data;
+      data= NULL;
+    }
+    mark_as_empty();
+  }
+  void reserve(size_t memory_size)
+  {
+    DBUG_ASSERT(memory_size % sizeof(size_t) == 0); //make sure size is sizeof(size_t) aligned
+    data= reinterpret_cast<uchar*>(new size_t[memory_size / sizeof(size_t)]);//force size_t alignment
+    size= memory_size;
+    position= 0;
+  }
   uchar *data;
   size_t size;
   size_t position;
@@ -56,7 +57,5 @@ private:
     size= position= 0;
   }
 };
-
-} //namespace keyring
 
 #endif //MYSQL_BUFFER_H

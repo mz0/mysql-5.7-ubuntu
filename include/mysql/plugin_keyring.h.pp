@@ -111,7 +111,7 @@ void mysql_query_cache_invalidate4(void* thd,
 void *thd_get_ha_data(const void* thd, const struct handlerton *hton);
 void thd_set_ha_data(void* thd, const struct handlerton *hton,
                      const void *ha_data);
-struct st_mysql_keyring
+struct st_mysql_keyring_file
 {
   int interface_version;
   my_bool (*mysql_key_store)(const char *key_id, const char *key_type,
@@ -121,7 +121,4 @@ struct st_mysql_keyring
   my_bool (*mysql_key_remove)(const char *key_id, const char *user_id);
   my_bool (*mysql_key_generate)(const char *key_id, const char *key_type,
                                 const char *user_id, size_t key_len);
-  void (*mysql_key_iterator_init)(void** key_iterator);
-  void (*mysql_key_iterator_deinit)(void* key_iterator);
-  bool (*mysql_key_iterator_get_key)(void* key_iterator, char *key_id, char *user_id);
 };

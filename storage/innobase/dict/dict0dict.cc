@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1996, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1996, 2016, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -492,7 +492,6 @@ dict_table_close(
 					indexes after an aborted online
 					index creation */
 {
-	ibool		drop_aborted;
 	if (!dict_locked && !dict_table_is_intrinsic(table)) {
 		mutex_enter(&dict_sys->mutex);
 	}
@@ -500,10 +499,6 @@ dict_table_close(
 	ut_ad(mutex_own(&dict_sys->mutex) || dict_table_is_intrinsic(table));
 	ut_a(table->get_ref_count() > 0);
 
-	drop_aborted = try_drop
-			&& table->drop_aborted
-			&& table->get_ref_count() == 1
-			&& dict_table_get_first_index(table);
 	table->release();
 
 	/* Intrinsic table is not added to dictionary cache so skip other
@@ -538,6 +533,12 @@ dict_table_close(
 
 	if (!dict_locked) {
 		table_id_t	table_id	= table->id;
+		ibool		drop_aborted;
+
+		drop_aborted = try_drop
+			&& table->drop_aborted
+			&& table->get_ref_count() == 1
+			&& dict_table_get_first_index(table);
 
 		mutex_exit(&dict_sys->mutex);
 
@@ -2154,28 +2155,6 @@ dict_table_remove_from_cache_low(
 		foreign->referenced_index = NULL;
 	}
 
-	if (lru_evict && table->drop_aborted) {
-		/* Do as dict_table_try_drop_aborted() does. */
-
-		trx_t* trx = trx_allocate_for_background();
-
-		ut_ad(mutex_own(&dict_sys->mutex));
-		ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
-
-		/* Mimic row_mysql_lock_data_dictionary(). */
-		trx->dict_operation_lock_mode = RW_X_LATCH;
-
-		trx_set_dict_operation(trx, TRX_DICT_OP_INDEX);
-
-		/* Silence a debug assertion in row_merge_drop_indexes(). */
-		ut_d(table->acquire());
-		row_merge_drop_indexes(trx, table, TRUE);
-		ut_d(table->release());
-		ut_ad(table->get_ref_count() == 0);
-		trx_commit_for_mysql(trx);
-		trx->dict_operation_lock_mode = 0;
-		trx_free_for_background(trx);
-	}
 	/* Remove the indexes from the cache */
 
 	for (index = UT_LIST_GET_LAST(table->indexes);
@@ -2206,6 +2185,29 @@ dict_table_remove_from_cache_low(
 
 	if (lru_evict) {
 		dict_table_autoinc_store(table);
+	}
+
+	if (lru_evict && table->drop_aborted) {
+		/* Do as dict_table_try_drop_aborted() does. */
+
+		trx_t* trx = trx_allocate_for_background();
+
+		ut_ad(mutex_own(&dict_sys->mutex));
+		ut_ad(rw_lock_own(dict_operation_lock, RW_LOCK_X));
+
+		/* Mimic row_mysql_lock_data_dictionary(). */
+		trx->dict_operation_lock_mode = RW_X_LATCH;
+
+		trx_set_dict_operation(trx, TRX_DICT_OP_INDEX);
+
+		/* Silence a debug assertion in row_merge_drop_indexes(). */
+		ut_d(table->acquire());
+		row_merge_drop_indexes(trx, table, TRUE);
+		ut_d(table->release());
+		ut_ad(table->get_ref_count() == 0);
+		trx_commit_for_mysql(trx);
+		trx->dict_operation_lock_mode = 0;
+		trx_free_for_background(trx);
 	}
 
 	/* Free virtual column template if any */
@@ -2631,25 +2633,11 @@ dict_index_add_to_cache_w_vcol(
 		const dict_field_t*	field
 			= dict_index_get_nth_field(new_index, i);
 
-		/* Check the column being added in the index for
-		the first time and flag the ordering column. */
-		if (field->col->ord_part == 0 ) {
-			field->col->max_prefix = field->prefix_len;
-			field->col->ord_part = 1;
-		} else if (field->prefix_len == 0) {
-			/* Set the max_prefix for a column to 0 if
-			its prefix length is 0 (for this index)
-			even if it was a part of any other index
-			with some prefix length. */
-			field->col->max_prefix = 0;
-		} else if (field->col->max_prefix != 0
-			   && field->prefix_len
-			   > field->col->max_prefix) {
-			/* Set the max_prefix value based on the
-			prefix_len. */
+		field->col->ord_part = 1;
+
+		if (field->prefix_len > field->col->max_prefix) {
 			field->col->max_prefix = field->prefix_len;
 		}
-		ut_ad(field->col->ord_part == 1);
 	}
 
 	new_index->stat_n_diff_key_vals =
@@ -3613,6 +3601,7 @@ dict_foreign_find_index(
 		if (types_idx != index
 		    && !(index->type & DICT_FTS)
 		    && !dict_index_is_spatial(index)
+		    && !dict_index_has_virtual(index)
 		    && !index->to_be_dropped
 		    && dict_foreign_qualify_index(
 			    table, col_names, columns, n_cols,
@@ -4607,8 +4596,8 @@ loop:
 			return(DB_CANNOT_ADD_CONSTRAINT);
 		}
 
-		if (dict_foreigns_has_s_base_col(local_fk_set, table)) {
-			return(DB_NO_FK_ON_S_BASE_COL);
+		if (dict_foreigns_has_v_base_col(local_fk_set, table)) {
+			return(DB_NO_FK_ON_V_BASE_COL);
 		}
 
 		/**********************************************************/
@@ -4626,8 +4615,6 @@ loop:
 				      local_fk_set.end(),
 				      dict_foreign_add_to_referenced_table());
 			local_fk_set.clear();
-
-			dict_mem_table_fill_foreign_vcol_set(table);
 		}
 		return(error);
 	}
@@ -5798,13 +5785,6 @@ dict_set_corrupted(
 		goto func_exit;
 	}
 
-	/* If this is read only mode, do not update SYS_INDEXES, just
-	mark it as corrupted in memory */
-	if (srv_read_only_mode) {
-		index->type |= DICT_CORRUPT;
-		goto func_exit;
-	}
-
 	heap = mem_heap_create(sizeof(dtuple_t) + 2 * (sizeof(dfield_t)
 			       + sizeof(que_fork_t) + sizeof(upd_node_t)
 			       + sizeof(upd_t) + 12));
@@ -6667,6 +6647,8 @@ dict_foreign_qualify_index(
 		field = dict_index_get_nth_field(index, i);
 		col_no = dict_col_get_no(field->col);
 
+		ut_ad(!dict_col_is_virtual(field->col));
+
 		if (field->prefix_len != 0) {
 			/* We do not accept column prefix
 			indexes here */
@@ -6927,10 +6909,10 @@ dict_tf_to_row_format_string(
 }
 
 /** Look for any dictionary objects that are found in the given tablespace.
-@param[in]	space_id	Tablespace ID to search for.
+@param[in]	space	Tablespace ID to search for.
 @return true if tablespace is empty. */
 bool
-dict_space_is_empty(
+dict_tablespace_is_empty(
 	ulint	space_id)
 {
 	btr_pcur_t	pcur;
@@ -6964,55 +6946,6 @@ dict_space_is_empty(
 	rw_lock_x_unlock(dict_operation_lock);
 
 	return(!found);
-}
-
-/** Find the space_id for the given name in sys_tablespaces.
-@param[in]	name	Tablespace name to search for.
-@return the tablespace ID. */
-ulint
-dict_space_get_id(
-	const char*	name)
-{
-	btr_pcur_t	pcur;
-	const rec_t*	rec;
-	mtr_t		mtr;
-	ulint		name_len = strlen(name);
-	ulint		id = ULINT_UNDEFINED;
-
-	rw_lock_x_lock(dict_operation_lock);
-	mutex_enter(&dict_sys->mutex);
-	mtr_start(&mtr);
-
-	for (rec = dict_startscan_system(&pcur, &mtr, SYS_TABLESPACES);
-	     rec != NULL;
-	     rec = dict_getnext_system(&pcur, &mtr)) {
-		const byte*	field;
-		ulint		len;
-
-		field = rec_get_nth_field_old(
-			rec, DICT_FLD__SYS_TABLESPACES__NAME, &len);
-		ut_ad(len > 0);
-		ut_ad(len < OS_FILE_MAX_PATH);
-
-		if (len == name_len && ut_memcmp(name, field, len) == 0) {
-
-			field = rec_get_nth_field_old(
-				rec, DICT_FLD__SYS_TABLESPACES__SPACE, &len);
-			ut_ad(len == 4);
-			id = mach_read_from_4(field);
-
-			/* This is normally called by dict_getnext_system()
-			at the end of the index. */
-			btr_pcur_close(&pcur);
-			break;
-		}
-	}
-
-	mtr_commit(&mtr);
-	mutex_exit(&dict_sys->mutex);
-	rw_lock_x_unlock(dict_operation_lock);
-
-	return(id);
 }
 #endif /* !UNIV_HOTBACKUP */
 

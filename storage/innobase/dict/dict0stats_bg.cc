@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 2012, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 2012, 2015, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -29,7 +29,6 @@ Created Apr 25, 2012 Vasil Dimov
 #include "row0mysql.h"
 #include "srv0start.h"
 #include "ut0new.h"
-#include "fil0fil.h"
 
 #ifdef UNIV_NONINL
 # include "dict0stats_bg.ic"
@@ -224,7 +223,7 @@ dict_stats_wait_bg_to_stop_using_table(
 				unlocking/locking the data dict */
 {
 	while (!dict_stats_stop_bg(table)) {
-		DICT_BG_YIELD(trx);
+		DICT_STATS_BG_YIELD(trx);
 	}
 }
 
@@ -318,12 +317,6 @@ dict_stats_process_entry_from_recalc_pool()
 		return;
 	}
 
-	if (fil_space_is_being_truncated(table->space)) {
-		dict_table_close(table, TRUE, FALSE);
-		mutex_exit(&dict_sys->mutex);
-		return;
-	}
-
 	/* Check whether table is corrupted */
 	if (table->corrupted) {
 		dict_table_close(table, TRUE, FALSE);
@@ -404,7 +397,7 @@ extern "C"
 os_thread_ret_t
 DECLARE_THREAD(dict_stats_thread)(
 /*==============================*/
-	void*	arg MY_ATTRIBUTE((unused)))	/*!< in: a dummy parameter
+	void*	arg __attribute__((unused)))	/*!< in: a dummy parameter
 						required by os_thread_create */
 {
 	ut_a(!srv_read_only_mode);
@@ -454,7 +447,7 @@ DECLARE_THREAD(dict_stats_thread)(
 
 	/* We count the number of threads in os_thread_exit(). A created
 	thread should always use that to exit instead of return(). */
-	os_thread_exit();
+	os_thread_exit(NULL);
 
 	OS_THREAD_DUMMY_RETURN;
 }

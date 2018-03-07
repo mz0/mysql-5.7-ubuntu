@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -214,7 +214,7 @@ void table_status_by_account
     return;
 
   m_row.m_variable_name.make_row(status_var->m_name, status_var->m_name_length);
-  m_row.m_variable_value.make_row(status_var);
+  m_row.m_variable_value.make_row(status_var->m_value_str, status_var->m_value_length);
 
   if (!pfs_account->m_lock.end_optimistic_lock(&lock))
     return;
@@ -251,7 +251,7 @@ int table_status_by_account
         set_field_varchar_utf8(f, m_row.m_variable_name.m_str, m_row.m_variable_name.m_length);
         break;
       case 3: /* VARIABLE_VALUE */
-        m_row.m_variable_value.set_field(f);
+        set_field_varchar_utf8(f, m_row.m_variable_value.m_str, m_row.m_variable_value.m_length);
         break;
       default:
         DBUG_ASSERT(false);

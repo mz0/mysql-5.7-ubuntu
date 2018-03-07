@@ -1,8 +1,6 @@
 --source include/not_embedded.inc
 --source include/have_audit_log_plugin.inc
 
-call mtr.add_suppression("Plugin audit_log reported");
-
 --disable_warnings
 --echo ##########################################
 --echo # Run audit_log plugin
@@ -74,7 +72,6 @@ UNINSTALL PLUGIN test_sql_2_sessions;
 --echo ##########################################
 --echo # Stop audit_log plugin
 --echo ##########################################
-move_file $MYSQLTEST_VARDIR/mysqld.1/data/audit.log $MYSQLTEST_VARDIR/mysqld.1/data/audit.log.temp;
 UNINSTALL PLUGIN audit_log;
 
 --echo ##########################################
@@ -87,7 +84,7 @@ remove_file $MYSQLD_DATADIR/test_sql_2_sessions.log;
 --echo ##########################################
 --echo # Check audit log file
 --echo ##########################################
-let $MYSQL_LOGFILE = $MYSQLTEST_VARDIR/mysqld.1/data/audit.log.temp;
+let $MYSQL_LOGFILE = $MYSQLTEST_VARDIR/mysqld.1/data/audit.log;
 CREATE TABLE t1 (c1 text);
 sleep 1;
 --replace_result $MYSQL_LOGFILE MYSQL_LOGFILE

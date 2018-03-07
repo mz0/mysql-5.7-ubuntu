@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -34,7 +34,6 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
-#include <sys/stat.h>
 
 C_MODE_START
 
@@ -90,7 +89,6 @@ C_MODE_START
 #define MY_RESOLVE_LINK 128	/* my_realpath(); Only resolve links */
 #define MY_HOLD_ORIGINAL_MODES 128  /* my_copy() holds to file modes */
 #define MY_REDEL_MAKE_BACKUP 256
-#define MY_REDEL_NO_COPY_STAT 512 /* my_redel() doesn't call my_copystat() */
 #define MY_SEEK_NOT_DONE 32	/* my_lock may have to do a seek */
 #define MY_DONT_WAIT	64	/* my_lock() don't wait if can't lock */
 #define MY_ZEROFILL	32	/* my_malloc(), fill array with zero */
@@ -149,8 +147,6 @@ C_MODE_START
 #define GETDATE_HHMMSSTIME	4
 #define GETDATE_GMT		8
 #define GETDATE_FIXEDLENGTH	16
-#define GETDATE_T_DELIMITER 32
-#define GETDATE_SHORT_DATE_FULL_YEAR 64
 
 	/* defines when allocating data */
 extern void *my_multi_malloc(PSI_memory_key key, myf flags, ...);
@@ -222,7 +218,7 @@ extern void (*fatal_error_handler_hook)(uint my_err, const char *str,
 extern void (*local_message_hook)(enum loglevel ll,
                                   const char *format, va_list args);
 extern uint my_file_limit;
-extern MYSQL_PLUGIN_IMPORT ulong my_thread_stack_size;
+extern ulong my_thread_stack_size;
 
 /*
   Hooks for reporting execution stage information. The server implementation
@@ -472,18 +468,8 @@ typedef struct st_io_cache		/* Used when cacheing files */
 
 typedef int (*qsort2_cmp)(const void *, const void *, const void *);
 
-/*
-  Subset of struct stat fields filled by stat/lstat/fstat that uniquely
-  identify a file
-*/
-typedef struct st_file_id
-{
-  dev_t st_dev;
-  ino_t st_ino;
-} ST_FILE_ID;
-
 typedef void (*my_error_reporter)(enum loglevel level, const char *format, ...)
-  MY_ATTRIBUTE((format(printf, 2, 3)));
+  __attribute__((format(printf, 2, 3)));
 
 extern my_error_reporter my_charset_error_reporter;
 
@@ -553,9 +539,8 @@ extern File my_create(const char *FileName,int CreateFlags,
 extern int my_close(File Filedes,myf MyFlags);
 extern int my_mkdir(const char *dir, int Flags, myf MyFlags);
 extern int my_readlink(char *to, const char *filename, myf MyFlags);
-extern int my_is_symlink(const char *filename, ST_FILE_ID *file_id);
+extern int my_is_symlink(const char *filename);
 extern int my_realpath(char *to, const char *filename, myf MyFlags);
-extern int my_is_same_file(File file, const ST_FILE_ID *file_id);
 extern File my_create_with_symlink(const char *linkname, const char *filename,
 				   int createflags, int access_flags,
 				   myf MyFlags);
@@ -647,7 +632,7 @@ extern const char *my_get_err_msg(int nr);
 extern void my_error(int nr,myf MyFlags, ...);
 extern void my_printf_error(uint my_err, const char *format,
                             myf MyFlags, ...)
-  MY_ATTRIBUTE((format(printf, 2, 4)));
+  __attribute__((format(printf, 2, 4)));
 extern void my_printv_error(uint error, const char *format, myf MyFlags,
                             va_list ap);
 extern int my_error_register(const char* (*get_errmsg) (int),
@@ -695,6 +680,7 @@ extern size_t cleanup_dirname(char * to,const char *from);
 extern size_t system_filename(char * to,const char *from);
 extern size_t unpack_filename(char * to,const char *from);
 extern char * intern_filename(char * to,const char *from);
+extern char * directory_file_name(char * dst, const char *src);
 extern int pack_filename(char * to, const char *name, size_t max_length);
 extern char * my_path(char * to,const char *progname,
 			 const char *own_pathname_part);
@@ -752,7 +738,7 @@ extern void my_b_seek(IO_CACHE *info,my_off_t pos);
 extern size_t my_b_gets(IO_CACHE *info, char *to, size_t max_length);
 extern my_off_t my_b_filelength(IO_CACHE *info);
 extern size_t my_b_printf(IO_CACHE *info, const char* fmt, ...)
-  MY_ATTRIBUTE((format(printf, 2, 3)));
+  __attribute__((format(printf, 2, 3)));
 extern size_t my_b_vprintf(IO_CACHE *info, const char* fmt, va_list ap);
 extern my_bool open_cached_file(IO_CACHE *cache,const char *dir,
 				 const char *prefix, size_t cache_size,
@@ -867,14 +853,6 @@ extern my_bool my_gethwaddr(uchar *to);
 
 #ifndef MAP_NOSYNC
 #define MAP_NOSYNC      0
-#endif
-
-/*
-  Not defined in FreeBSD 11.
-  Was never implemented in FreeBSD, so we just set it to 0.
-*/
-#ifndef MAP_NORESERVE
-#define MAP_NORESERVE 0
 #endif
 
 #ifdef HAVE_MMAP64

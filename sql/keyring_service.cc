@@ -1,4 +1,4 @@
-/*  Copyright (c) 2016, 2017 Oracle and/or its affiliates. All rights reserved.
+/*  Copyright (c) 2016 Oracle and/or its affiliates. All rights reserved.
 
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License as
@@ -16,7 +16,7 @@
 
 #include "m_ctype.h"  /* my_charset_utf8_bin */
 #include <mysql/plugin_keyring.h> /* keyring plugin */
-#include "set_var.h"
+
 #include "strfunc.h"
 #include "sql_string.h"
 #include "sql_plugin.h"
@@ -44,8 +44,8 @@ static my_bool key_fetch(THD *thd, plugin_ref plugin, void *arg)
   plugin= my_plugin_lock(NULL, &plugin);
   if (plugin)
   {
-    st_mysql_keyring *keyring=
-      (st_mysql_keyring *) plugin_decl(plugin)->info;
+    st_mysql_keyring_file *keyring=
+      (st_mysql_keyring_file *) plugin_decl(plugin)->info;
     key_data->result= keyring->mysql_key_fetch(key_data->key_id, key_data->key_type_to_fetch,
       key_data->user_id, key_data->key_to_fetch, key_data->key_len_to_fetch);
   }
@@ -61,8 +61,8 @@ static my_bool key_store(THD *thd, plugin_ref plugin, void *arg)
   plugin= my_plugin_lock(NULL, &plugin);
   if (plugin)
   {
-    st_mysql_keyring *keyring=
-      (st_mysql_keyring *) plugin_decl(plugin)->info;
+    st_mysql_keyring_file *keyring=
+      (st_mysql_keyring_file *) plugin_decl(plugin)->info;
     key_data->result= keyring->mysql_key_store(key_data->key_id, key_data->key_type_to_store,
       key_data->user_id, key_data->key_to_store, key_data->key_len_to_store);
   }
@@ -78,8 +78,8 @@ static my_bool key_remove(THD *thd, plugin_ref plugin, void *arg)
   plugin= my_plugin_lock(NULL, &plugin);
   if (plugin)
   {
-    st_mysql_keyring *keyring=
-      (st_mysql_keyring *) plugin_decl(plugin)->info;
+    st_mysql_keyring_file *keyring=
+      (st_mysql_keyring_file *) plugin_decl(plugin)->info;
     key_data->result= keyring->mysql_key_remove(key_data->key_id, key_data->user_id);
   }
   //this function should get executed only for the first plugin. This is why
@@ -94,8 +94,8 @@ static my_bool key_generate(THD *thd, plugin_ref plugin, void *arg)
   plugin= my_plugin_lock(NULL, &plugin);
   if (plugin)
   {
-    st_mysql_keyring *keyring=
-      (st_mysql_keyring *) plugin_decl(plugin)->info;
+    st_mysql_keyring_file *keyring=
+      (st_mysql_keyring_file *) plugin_decl(plugin)->info;
     key_data->result= keyring->mysql_key_generate(key_data->key_id,
       key_data->key_type_to_store, key_data->user_id, key_data->key_len_to_store);
   }
@@ -127,8 +127,6 @@ int my_key_store(const char *key_id, const char *key_type, const char *user_id,
   key_data.user_id= user_id;
   key_data.key_to_store= key;
   key_data.key_len_to_store= key_len;
-  if (keyring_access_test())
-    return 1;
   plugin_foreach(current_thd, key_store, MYSQL_KEYRING_PLUGIN, &key_data);
   return key_data.result;
 }
@@ -138,8 +136,6 @@ int my_key_remove(const char *key_id, const char *user_id)
   Key_data key_data;
   key_data.key_id= key_id;
   key_data.user_id= user_id;
-  if (keyring_access_test())
-    return 1;
   plugin_foreach(current_thd, key_remove, MYSQL_KEYRING_PLUGIN, &key_data);
   return key_data.result;
 }
@@ -153,8 +149,6 @@ int my_key_generate(const char *key_id, const char *key_type,
   key_data.key_type_to_store= key_type;
   key_data.user_id= user_id;
   key_data.key_len_to_store= key_len;
-  if (keyring_access_test())
-    return 1;
   plugin_foreach(current_thd, key_generate, MYSQL_KEYRING_PLUGIN, &key_data);
   return key_data.result;
 }

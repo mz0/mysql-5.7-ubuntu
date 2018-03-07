@@ -1,4 +1,4 @@
-/* Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
 
   This program is free software; you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,7 +24,6 @@
 #include "pfs.h"
 #include "pfs_global.h"
 #include "pfs_visitor.h"
-#include "sql_audit.h"                      // audit_global_variable_get
 
 /**
   CLASS PFS_system_variable_cache
@@ -533,7 +532,7 @@ void System_variable::init(THD *target_thd, const SHOW_VAR *show_var,
 
   /* Get the value of the system variable. */
   const char *value;
-  value= get_one_variable_ext(current_thread, target_thd, show_var, query_scope, show_var_type,
+  value= get_one_variable_ext(current_thd, target_thd, show_var, query_scope, show_var_type,
                               NULL, &m_charset, m_value_str, &m_value_length);
 
   m_value_length= MY_MIN(m_value_length, SHOW_VAR_FUNC_BUFF_SIZE);
@@ -546,15 +545,6 @@ void System_variable::init(THD *target_thd, const SHOW_VAR *show_var,
   mysql_mutex_unlock(&LOCK_global_system_variables);
   if (target_thd != current_thread)
     mysql_mutex_unlock(&target_thd->LOCK_thd_sysvar);
-
-#ifndef EMBEDDED_LIBRARY
-  if (show_var_type != SHOW_FUNC && query_scope == OPT_GLOBAL &&
-      mysql_audit_notify(current_thread,
-                         AUDIT_EVENT(MYSQL_AUDIT_GLOBAL_VARIABLE_GET),
-                         m_name, value, m_value_length))
-    return;
-#endif
-
 
   m_initialized= true;
 }
@@ -1151,9 +1141,7 @@ void PFS_status_variable_cache::manifest(THD *thd, const SHOW_VAR *show_var_arra
        show_var_iter && show_var_iter->name;
        show_var_iter++)
   {
-    // work buffer, must be aligned to handle long/longlong values
-    my_aligned_storage<SHOW_VAR_FUNC_BUFF_SIZE+1, MY_ALIGNOF(longlong)>
-      value_buf;
+    char value_buf[SHOW_VAR_FUNC_BUFF_SIZE+1]; /* work buffer */
     SHOW_VAR show_var_tmp;
     const SHOW_VAR *show_var_ptr= show_var_iter;  /* preserve array pointer */
 
@@ -1171,7 +1159,7 @@ void PFS_status_variable_cache::manifest(THD *thd, const SHOW_VAR *show_var_arra
       */
       for (const SHOW_VAR *var= show_var_ptr; var->type == SHOW_FUNC; var= &show_var_tmp)
       {
-        ((mysql_show_var_func)(var->value))(thd, &show_var_tmp, value_buf.data);
+        ((mysql_show_var_func)(var->value))(thd, &show_var_tmp, value_buf);
       }
       show_var_ptr= &show_var_tmp;
     }
@@ -1234,10 +1222,12 @@ void Status_variable::init(const SHOW_VAR *show_var, STATUS_VAR *status_vars, en
   m_type= show_var->type;
   m_scope= show_var->scope;
 
+  const CHARSET_INFO *charset= system_charset_info;
+
   /* Get the value of the status variable. */
   const char *value;
   value= get_one_variable(current_thd, show_var, query_scope, m_type,
-                          status_vars, &m_charset, m_value_str, &m_value_length);
+                          status_vars, &charset, m_value_str, &m_value_length);
   m_value_length= MY_MIN(m_value_length, SHOW_VAR_FUNC_BUFF_SIZE);
 
   /* Returned value may reference a string other than m_value_str. */

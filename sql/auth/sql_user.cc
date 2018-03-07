@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; version 2 of the License.
@@ -28,13 +28,6 @@
 #include "prealloced_array.h"
 #include "tztime.h"
 #include "crypt_genhash_impl.h"         /* CRYPT_MAX_PASSWORD_SIZE */
-#include "sql_user_table.h"
-#include <set>
-
-#ifndef DBUG_OFF
-#define HASH_STRING_WITH_QUOTE \
-        "$5$BVZy9O>'a+2MH]_?$fpWyabcdiHjfCVqId/quykZzjaA7adpkcen/uiQrtmOK4p4"
-#endif
 
 /**
   Auxiliary function for constructing a  user list string.
@@ -185,32 +178,6 @@ void append_user_new(THD *thd, String *str, LEX_USER *user, bool comma= true)
       }
     }
   }
-}
-
-/**
-  Escapes special characters in the unescaped string, taking into account
-  the current character set and sql mode.
-
-  @param thd    [in]  The thd structure.
-  @param to     [out] Escaped string output buffer.
-  @param from   [in]  String to escape.
-  @param length [in]  String to escape length.
-
-  @return Result value.
-    @retval != (ulong)-1 Succeeded. Number of bytes written to the output
-                         buffer without the '\0' character.
-    @retval (ulong)-1    Failed.
-*/
-
-inline ulong escape_string_mysql(THD *thd, char *to, const char *from,
-                                 ulong length)
-{
-    if (!(thd->variables.sql_mode & MODE_NO_BACKSLASH_ESCAPES))
-      return (uint)escape_string_for_mysql(system_charset_info, to, 0, from,
-                                           length);
-    else
-      return (uint)escape_quotes_for_mysql(system_charset_info, to, 0, from,
-                                           length, '\'');
 }
 
 #ifndef NO_EMBEDDED_ACCESS_CHECKS
@@ -397,7 +364,6 @@ err:
   @param what_to_set  User attributes
   @param is_privileged_user     Whether caller has CREATE_USER_ACL
                                 or UPDATE_ACL over mysql.*
-  @param cmd          Command information
 
   @retval 0 ok
   @retval 1 ERROR;
@@ -406,8 +372,7 @@ err:
 bool set_and_validate_user_attributes(THD *thd,
                                       LEX_USER *Str,
                                       ulong &what_to_set,
-                                      bool is_privileged_user,
-                                      const char * cmd)
+                                      bool is_privileged_user)
 {
   bool user_exists= false;
   ACL_USER *acl_user;
@@ -461,8 +426,7 @@ bool set_and_validate_user_attributes(THD *thd,
         always check for password expire/interval attributes as there is no
         way to differentiate NEVER EXPIRE and EXPIRE DEFAULT scenario
       */
-      if (Str->alter_status.update_password_expired_fields)
-        what_to_set|= PASSWORD_EXPIRE_ATTR;
+      what_to_set|= PASSWORD_EXPIRE_ATTR;
     }
     else
     {
@@ -481,13 +445,12 @@ bool set_and_validate_user_attributes(THD *thd,
       }
     }
     /*
-      if there is a plugin specified with no auth string, and that
-      plugin supports password expiration then set the account as expired.
+      if there is a plugin specified with no auth string, then set
+      the account as expired.
     */
     if (Str->uses_identified_with_clause &&
         !(Str->uses_identified_by_clause ||
-        Str->uses_authentication_string_clause) &&
-        auth_plugin_supports_expiration(Str->plugin.str))
+        Str->uses_authentication_string_clause))
     {
       Str->alter_status.update_password_expired_column= true;
       what_to_set|= PASSWORD_EXPIRE_ATTR;
@@ -576,17 +539,6 @@ bool set_and_validate_user_attributes(THD *thd,
                                              inbuflen))
     {
       plugin_unlock(0, plugin);
-
-      /*
-        generate_authentication_string may return error status
-        without setting actual error.
-      */
-      if (!thd->is_error())
-      {
-        String error_user;
-        append_user(thd, &error_user, Str, FALSE, FALSE);
-        my_error(ER_CANNOT_USER, MYF(0), cmd, error_user.c_ptr_safe());
-      }
       return(1);
     }
     if (buflen)
@@ -659,18 +611,15 @@ bool change_password(THD *thd, const char *host, const char *user,
 {
   TABLE_LIST tables;
   TABLE *table;
-  Acl_table_intact table_intact;
   LEX_USER *combo= NULL;
   /* Buffer should be extended when password length is extended. */
-  char buff[2048];
+  char buff[512];
   /* buffer to store the hash string */
   char hash_str[MAX_FIELD_WIDTH]= {0};
-  char *hash_str_escaped= NULL;
   ulong query_length= 0;
   ulong what_to_set= 0;
   bool save_binlog_row_based;
   size_t new_password_len= strlen(new_password);
-  size_t escaped_hash_str_len= 0;
   bool result= true, rollback_whole_statement= false;
   int ret;
 
@@ -702,9 +651,6 @@ bool change_password(THD *thd, const char *host, const char *user,
   }
 #endif
   if (!(table= open_ltable(thd, &tables, TL_WRITE, MYSQL_LOCK_IGNORE_TIMEOUT)))
-    DBUG_RETURN(1);
-
-  if (table_intact.check(table, &mysql_user_table_def))
     DBUG_RETURN(1);
 
   if (!table->key_info)
@@ -761,7 +707,6 @@ bool change_password(THD *thd, const char *host, const char *user,
   thd->lex->alter_password.expire_after_days= 0;
   thd->lex->alter_password.update_account_locked_column= false;
   thd->lex->alter_password.account_locked= false;
-  thd->lex->alter_password.update_password_expired_fields= false;
 
   /*
     When @@log-backward-compatible-user-definitions variable is ON
@@ -772,14 +717,12 @@ bool change_password(THD *thd, const char *host, const char *user,
       thd->slave_thread)
     combo->uses_identified_by_clause= false;
     
-  if (set_and_validate_user_attributes(thd, combo, what_to_set,
-                                       true, "SET PASSWORD"))
+  if (set_and_validate_user_attributes(thd, combo, what_to_set, true))
   {
     result= 1;
     mysql_mutex_unlock(&acl_cache->lock);
     goto end;
   }
-
   ret= replace_user_table(thd, table, combo, 0, false, true, what_to_set);
   if (ret)
   {
@@ -801,20 +744,6 @@ bool change_password(THD *thd, const char *host, const char *user,
 
   mysql_mutex_unlock(&acl_cache->lock);
   result= 0;
-  escaped_hash_str_len= (opt_log_builtin_as_identified_by_password?
-                         combo->auth.length:
-                         acl_user->auth_string.length)*2+1;
-  /*
-     Allocate a buffer for the escaped password. It should at least have place
-     for length*2+1 chars.
-  */
-  hash_str_escaped= (char *)alloc_root(thd->mem_root, escaped_hash_str_len);
-  if (!hash_str_escaped)
-  {
-    my_error(ER_OUTOFMEMORY, MYF(ME_FATALERROR), 0);
-    result= 1;
-    goto end;
-  }
   /*
     Based on @@log-backward-compatible-user-definitions variable
     rewrite SET PASSWORD
@@ -822,33 +751,17 @@ bool change_password(THD *thd, const char *host, const char *user,
   if (opt_log_builtin_as_identified_by_password)
   {
     memcpy(hash_str, combo->auth.str, combo->auth.length);
-
-    DBUG_EXECUTE_IF("force_hash_string_with_quote",
-		     strcpy(hash_str, HASH_STRING_WITH_QUOTE);
-                   );
-
-    escape_string_mysql(thd, hash_str_escaped, hash_str, strlen(hash_str));
-
     query_length= sprintf(buff, "SET PASSWORD FOR '%-.120s'@'%-.120s'='%s'",
                           acl_user->user ? acl_user->user : "",
                           acl_user->host.get_host() ? acl_user->host.get_host() : "",
-                          hash_str_escaped);
+                          hash_str);
   }
   else
-  {
-    DBUG_EXECUTE_IF("force_hash_string_with_quote",
-                     strcpy(acl_user->auth_string.str, HASH_STRING_WITH_QUOTE);
-                   );
-
-    escape_string_mysql(thd, hash_str_escaped, acl_user->auth_string.str,
-                        strlen(acl_user->auth_string.str));
-
     query_length= sprintf(buff, "ALTER USER '%-.120s'@'%-.120s' IDENTIFIED WITH '%-.120s' AS '%s'",
                           acl_user->user ? acl_user->user : "",
                           acl_user->host.get_host() ? acl_user->host.get_host() : "",
                           acl_user->plugin.str,
-                          hash_str_escaped);
-  }
+                          acl_user->auth_string.str);
   result= write_bin_log(thd, true, buff, query_length,
                         table->file->has_transactions());
 end:
@@ -1157,16 +1070,9 @@ static int handle_grant_data(TABLE_LIST *tables, bool drop,
   int result= 0;
   int found;
   int ret;
-  Acl_table_intact table_intact;
   DBUG_ENTER("handle_grant_data");
 
   /* Handle user table. */
-  if (table_intact.check(tables[0].table, &mysql_user_table_def))
-  {
-    result= -1;
-    goto end;
-  }
-
   if ((found= handle_grant_table(tables, 0, drop, user_from, user_to)) < 0)
   {
     /* Handle of table failed, don't touch the in-memory array. */
@@ -1191,12 +1097,6 @@ static int handle_grant_data(TABLE_LIST *tables, bool drop,
   }
 
   /* Handle db table. */
-  if (table_intact.check(tables[1].table, &mysql_db_table_def))
-  {
-    result= -1;
-    goto end;
-  }
-
   if ((found= handle_grant_table(tables, 1, drop, user_from, user_to)) < 0)
   {
     /* Handle of table failed, don't touch the in-memory array. */
@@ -1221,12 +1121,6 @@ static int handle_grant_data(TABLE_LIST *tables, bool drop,
   }
 
   /* Handle stored routines table. */
-  if (table_intact.check(tables[4].table, &mysql_procs_priv_table_def))
-  {
-    result= -1;
-    goto end;
-  }
-
   if ((found= handle_grant_table(tables, 4, drop, user_from, user_to)) < 0)
   {
     /* Handle of table failed, don't touch in-memory array. */
@@ -1267,12 +1161,6 @@ static int handle_grant_data(TABLE_LIST *tables, bool drop,
   }
 
   /* Handle tables table. */
-  if (table_intact.check(tables[2].table, &mysql_tables_priv_table_def))
-  {
-    result= -1;
-    goto end;
-  }
-
   if ((found= handle_grant_table(tables, 2, drop, user_from, user_to)) < 0)
   {
     /* Handle of table failed, don't touch columns and in-memory array. */
@@ -1289,12 +1177,6 @@ static int handle_grant_data(TABLE_LIST *tables, bool drop,
     }
 
     /* Handle columns table. */
-    if (table_intact.check(tables[3].table, &mysql_columns_priv_table_def))
-    {
-      result= -1;
-      goto end;
-    }
-
     if ((found= handle_grant_table(tables, 3, drop, user_from, user_to)) < 0)
     {
       /* Handle of table failed, don't touch the in-memory array. */
@@ -1315,12 +1197,6 @@ static int handle_grant_data(TABLE_LIST *tables, bool drop,
   /* Handle proxies_priv table. */
   if (tables[5].table)
   {
-    if (table_intact.check(tables[5].table, &mysql_proxies_priv_table_def))
-    {
-      result= -1;
-      goto end;
-    }
-
     if ((found= handle_grant_table(tables, 5, drop, user_from, user_to)) < 0)
     {
       /* Handle of table failed, don't touch the in-memory array. */
@@ -1367,7 +1243,6 @@ bool mysql_create_user(THD *thd, List <LEX_USER> &list, bool if_not_exists)
   ulong what_to_update= 0;
   bool is_anonymous_user= false;
   bool rollback_whole_statement= false;
-  std::set<LEX_USER *> extra_users;
   DBUG_ENTER("mysql_create_user");
 
   /*
@@ -1404,8 +1279,7 @@ bool mysql_create_user(THD *thd, List <LEX_USER> &list, bool if_not_exists)
       result= TRUE;
       continue;
     }
-    if (set_and_validate_user_attributes(thd, user_name, what_to_update,
-                                         true, "CREATE USER"))
+    if (set_and_validate_user_attributes(thd, user_name, what_to_update, true))
     {
       result= TRUE;
       continue;
@@ -1433,7 +1307,9 @@ bool mysql_create_user(THD *thd, List <LEX_USER> &list, bool if_not_exists)
         result= true;
         break;
       }
-      else if (if_not_exists)
+      else if (if_not_exists &&
+               (opt_general_log_raw
+               || !user_name->uses_identified_by_clause))
       {
         String warn_user;
         append_user(thd, &warn_user, user_name, FALSE, FALSE);
@@ -1441,14 +1317,8 @@ bool mysql_create_user(THD *thd, List <LEX_USER> &list, bool if_not_exists)
                             ER_USER_ALREADY_EXISTS,
                             ER_THD(thd, ER_USER_ALREADY_EXISTS),
                             warn_user.c_ptr_safe());
-        try
-        {
-          extra_users.insert(user_name);
-        }
-        catch (...) {}
-        continue;
       }
-      else
+     else
       {
         append_user(thd, &wrong_users, user_name, wrong_users.length() > 0,
                     false);
@@ -1474,23 +1344,16 @@ bool mysql_create_user(THD *thd, List <LEX_USER> &list, bool if_not_exists)
   {
     String *rlb= &thd->rewritten_query;
     rlb->mem_free();
-    mysql_rewrite_create_alter_user(thd, rlb, &extra_users);
+    mysql_rewrite_create_alter_user(thd, rlb);
 
-    int ret= commit_owned_gtid_by_partial_command(thd);
-
-    if (ret == 1)
-    {
-      if (!thd->rewritten_query.length())
-        result|= write_bin_log(thd, false, thd->query().str, thd->query().length,
-                               transactional_tables);
-      else
-        result|= write_bin_log(thd, false,
-                               thd->rewritten_query.c_ptr_safe(),
-                               thd->rewritten_query.length(),
-                               transactional_tables);
-    }
-    else if (ret == -1)
-      result|= -1;
+    if (!thd->rewritten_query.length())
+      result|= write_bin_log(thd, false, thd->query().str, thd->query().length,
+                             transactional_tables);
+    else
+      result|= write_bin_log(thd, false,
+                             thd->rewritten_query.c_ptr_safe(),
+                             thd->rewritten_query.length(),
+                             transactional_tables);
   }
 
   lock.unlock();
@@ -1604,15 +1467,9 @@ bool mysql_drop_user(THD *thd, List <LEX_USER> &list, bool if_exists)
     my_error(ER_CANNOT_USER, MYF(0), "DROP USER", wrong_users.c_ptr_safe());
 
   if (some_users_deleted || if_exists)
-  {
-    int ret= commit_owned_gtid_by_partial_command(thd);
-    if (ret == 1)
-      result |= write_bin_log(thd, FALSE, thd->query().str,
-                              thd->query().length,
-                              transactional_tables);
-    else if (ret == -1)
-      result |= -1;
-  }
+    result |= write_bin_log(thd, FALSE, thd->query().str, thd->query().length,
+                            transactional_tables);
+
   lock.unlock();
 
   result|=
@@ -1743,14 +1600,8 @@ bool mysql_rename_user(THD *thd, List <LEX_USER> &list)
     my_error(ER_CANNOT_USER, MYF(0), "RENAME USER", wrong_users.c_ptr_safe());
   
   if (some_users_renamed)
-  {
-    int ret= commit_owned_gtid_by_partial_command(thd);
-    if (ret == 1)
-      result|= write_bin_log(thd, FALSE, thd->query().str, thd->query().length,
-                              transactional_tables);
-    else if (ret == -1)
-      result|= -1;
-  }
+    result |= write_bin_log(thd, FALSE, thd->query().str, thd->query().length,
+                            transactional_tables);
 
   lock.unlock();
 
@@ -1796,8 +1647,6 @@ bool mysql_alter_user(THD *thd, List <LEX_USER> &list, bool if_exists)
   bool save_binlog_row_based;
   bool is_privileged_user= false;
   bool rollback_whole_statement= false;
-  std::set<LEX_USER *> extra_users;
-  Acl_table_intact table_intact;
 
   DBUG_ENTER("mysql_alter_user");
 
@@ -1826,9 +1675,6 @@ bool mysql_alter_user(THD *thd, List <LEX_USER> &list, bool if_exists)
   }
 #endif
   if (!(table= open_ltable(thd, &tables, TL_WRITE, MYSQL_LOCK_IGNORE_TIMEOUT)))
-    DBUG_RETURN(true);
-
-  if (table_intact.check(table, &mysql_user_table_def))
     DBUG_RETURN(true);
 
   if (!table->key_info)
@@ -1865,33 +1711,53 @@ bool mysql_alter_user(THD *thd, List <LEX_USER> &list, bool if_exists)
       continue;
     }
 
-    if (user_from && user_from->plugin.str)
-      optimize_plugin_compare_by_pointer(&user_from->plugin);
+    /* look up the user */
+    if (!(acl_user= find_acl_user(user_from->host.str,
+                                   user_from->user.str, TRUE)))
+    {
+      if (if_exists && (opt_general_log_raw
+          || !user_from->uses_identified_by_clause))
+      {
+        String warn_user;
+        append_user(thd, &warn_user, user_from, FALSE, FALSE);
+        push_warning_printf(thd, Sql_condition::SL_NOTE,
+          ER_USER_DOES_NOT_EXIST,
+          ER_THD(thd, ER_USER_DOES_NOT_EXIST),
+          warn_user.c_ptr_safe());
+      }
+      else
+      {
+        result= TRUE;
+        append_user(thd, &wrong_users, user_from, wrong_users.length() > 0,
+          false);
+      }
+
+      continue;
+    }
 
     /* copy password expire attributes to individual lex user */
     user_from->alter_status= thd->lex->alter_password;
-
-    if (set_and_validate_user_attributes(thd, user_from, what_to_alter,
-                                         is_privileged_user, "ALTER USER"))
-    {
-      result= true;
-      continue;
-    }
 
     /*
       Check if the user's authentication method supports expiration only
       if PASSWORD EXPIRE attribute is specified
     */
     if (user_from->alter_status.update_password_expired_column &&
-        !auth_plugin_supports_expiration(user_from->plugin.str))
+        !auth_plugin_supports_expiration(acl_user->plugin.str))
     {
       result= true;
       append_user(thd, &wrong_users, user_from, wrong_users.length() > 0,
                   false);
       continue;
     }
+    if (set_and_validate_user_attributes(thd, user_from, what_to_alter,
+                                         is_privileged_user))
+    {
+      result= true;
+      continue;
+    }
 
-    if (!strcmp(user_from->user.str, "") &&
+    if (!acl_user->user && 
         (what_to_alter & PASSWORD_EXPIRE_ATTR) &&
         user_from->alter_status.update_password_expired_column)
     {
@@ -1899,34 +1765,6 @@ bool mysql_alter_user(THD *thd, List <LEX_USER> &list, bool if_exists)
       is_anonymous_user = true;
       append_user(thd, &wrong_users, user_from, wrong_users.length() > 0,
         false);
-      continue;
-    }
-
-    /* look up the user */
-    if (!(acl_user= find_acl_user(user_from->host.str,
-                                  user_from->user.str, TRUE)))
-    {
-      if (if_exists)
-      {
-        String warn_user;
-        append_user(thd, &warn_user, user_from, FALSE, FALSE);
-        push_warning_printf(thd, Sql_condition::SL_NOTE,
-                            ER_USER_DOES_NOT_EXIST,
-                            ER_THD(thd, ER_USER_DOES_NOT_EXIST),
-                            warn_user.c_ptr_safe());
-        try
-        {
-          extra_users.insert(user_from);
-        }
-        catch (...) {}
-      }
-      else
-      {
-        result= TRUE;
-        append_user(thd, &wrong_users, user_from, wrong_users.length() > 0,
-                    false);
-      }
-
       continue;
     }
 
@@ -1966,17 +1804,12 @@ bool mysql_alter_user(THD *thd, List <LEX_USER> &list, bool if_exists)
     /* do query rewrite for ALTER USER */
     String *rlb= &thd->rewritten_query;
     rlb->mem_free();
-    mysql_rewrite_create_alter_user(thd, rlb, &extra_users);
+    mysql_rewrite_create_alter_user(thd, rlb);
 
-    int ret= commit_owned_gtid_by_partial_command(thd);
-    if (ret == 1)
-      result|= (write_bin_log(thd, false,
-                              thd->rewritten_query.c_ptr_safe(),
-                              thd->rewritten_query.length(),
-                              table->file->has_transactions()) != 0);
-
-    else if (ret == -1)
-      result|= -1;
+    result|= (write_bin_log(thd, false,
+                            thd->rewritten_query.c_ptr_safe(),
+                            thd->rewritten_query.length(),
+                            table->file->has_transactions()) != 0);
   }
 
   lock.unlock();

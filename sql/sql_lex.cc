@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -58,9 +58,6 @@ const LEX_STRING empty_lex_str= {(char *) "", 0};
 
   @note The order of the elements of this array must correspond to
   the order of elements in enum_binlog_stmt_unsafe.
-
-  Todo/fixme Bug#22860121 ER_BINLOG_UNSAFE_* FAMILY OF ERROR CODES IS UNUSED
-    suggests to turn ER_BINLOG_UNSAFE* to private consts/messages.
 */
 const int
 Query_tables_list::binlog_stmt_unsafe_errcode[BINLOG_STMT_UNSAFE_COUNT] =
@@ -84,8 +81,7 @@ Query_tables_list::binlog_stmt_unsafe_errcode[BINLOG_STMT_UNSAFE_COUNT] =
   ER_BINLOG_UNSAFE_UPDATE_IGNORE,
   ER_BINLOG_UNSAFE_INSERT_TWO_KEYS,
   ER_BINLOG_UNSAFE_AUTOINC_NOT_FIRST,
-  ER_BINLOG_UNSAFE_FULLTEXT_PLUGIN,
-  ER_BINLOG_UNSAFE_XA
+  ER_BINLOG_UNSAFE_FULLTEXT_PLUGIN
 };
 
 
@@ -530,6 +526,7 @@ void lex_end(LEX *lex)
 
   delete lex->sphead;
   lex->sphead= NULL;
+  lex->clear_values_map();
 
   DBUG_VOID_RETURN;
 }
@@ -1285,12 +1282,6 @@ int MYSQLlex(YYSTYPE *yylval, YYLTYPE *yylloc, THD *thd)
   Lex_input_stream *lip= & thd->m_parser_state->m_lip;
   int token;
 
-  if (thd->is_error())
-  {
-    if (thd->get_parser_da()->has_sql_condition(ER_CAPACITY_EXCEEDED))
-      return ABORT_SYM;
-  }
-
   if (lip->lookahead_token >= 0)
   {
     /*
@@ -1396,12 +1387,10 @@ static int lex_one_token(YYSTYPE *yylval, THD *thd)
     case MY_LEX_ESCAPE:
       if (lip->yyGet() == 'N')
       {					// Allow \N as shortcut for NULL
-        push_deprecated_warn(thd, "\\N", "NULL");
 	yylval->lex_str.str=(char*) "\\N";
 	yylval->lex_str.length=2;
 	return NULL_SYM;
       }
-      // Fall through.
     case MY_LEX_CHAR:			// Unknown or single char token
     case MY_LEX_SKIP:			// This should not happen
       if (c == '-' && lip->yyPeek() == '-' &&
@@ -1416,11 +1405,6 @@ static int lex_one_token(YYSTYPE *yylval, THD *thd)
       {
         lip->yySkip();
         lip->next_state= MY_LEX_START;
-        if (lip->yyPeek() == '>')
-        {
-          lip->yySkip();
-          return JSON_UNQUOTED_SEPARATOR_SYM;
-        }
         return JSON_SEPARATOR_SYM;
       }
 
@@ -1476,14 +1460,12 @@ static int lex_one_token(YYSTYPE *yylval, THD *thd)
 	state= MY_LEX_HEX_NUMBER;
 	break;
       }
-      // Fall through.
     case MY_LEX_IDENT_OR_BIN:
       if (lip->yyPeek() == '\'')
       {                                 // Found b'bin-number'
         state= MY_LEX_BIN_NUMBER;
         break;
       }
-      // Fall through.
     case MY_LEX_IDENT:
       const char *start;
       if (use_mb(cs))
@@ -1842,7 +1824,6 @@ static int lex_one_token(YYSTYPE *yylval, THD *thd)
 	break;
       }
       /* " used for strings */
-      // Fall through.
     case MY_LEX_STRING:			// Incomplete text string
       if (!(yylval->lex_str.str = get_text(lip, 1, 1)))
       {
@@ -2339,16 +2320,16 @@ void st_select_lex_unit::exclude_level()
         removed, we must also exclude the Name_resolution_context
         belonging to this level. Do this by looping through inner
         subqueries and changing their contexts' outer context pointers
-        to point to the outer select's context.
+        to point to the outer context of the removed SELECT_LEX.
       */
       for (SELECT_LEX *s= u->first_select(); s; s= s->next_select())
       {
         if (s->context.outer_context == &sl->context)
-          s->context.outer_context= &sl->outer_select()->context;
+          s->context.outer_context= sl->context.outer_context;
       }
       if (u->fake_select_lex &&
           u->fake_select_lex->context.outer_context == &sl->context)
-        u->fake_select_lex->context.outer_context= &sl->outer_select()->context;
+        u->fake_select_lex->context.outer_context= sl->context.outer_context;
       u->master= master;
       last= &(u->next);
     }
@@ -2895,46 +2876,26 @@ static void print_join(THD *thd,
   /* List is reversed => we should reverse it before using */
   List_iterator_fast<TABLE_LIST> ti(*tables);
   TABLE_LIST **table;
-
-  /*
-    If the QT_NO_DATA_EXPANSION flag is specified, we print the
-    original table list, including constant tables that have been
-    optimized away, as the constant tables may be referenced in the
-    expression printed by Item_field::print() when this flag is given.
-    Otherwise, only non-const tables are printed.
-
-    Example:
-
-    Original SQL:
-    select * from (select 1) t
-
-    Printed without QT_NO_DATA_EXPANSION:
-    select '1' AS `1` from dual
-
-    Printed with QT_NO_DATA_EXPANSION:
-    select `t`.`1` from (select 1 AS `1`) `t`
-  */
-  const bool print_const_tables= (query_type & QT_NO_DATA_EXPANSION);
-  size_t tables_to_print= 0;
+  uint non_const_tables= 0;
 
   for (TABLE_LIST *t= ti++; t ; t= ti++)
-    if (print_const_tables || !t->optimized_away)
-      tables_to_print++;
-  if (tables_to_print == 0)
+    if (!t->optimized_away)
+      non_const_tables++;
+  if (!non_const_tables)
   {
     str->append(STRING_WITH_LEN("dual"));
     return; // all tables were optimized away
   }
   ti.rewind();
 
-  if (!(table= static_cast<TABLE_LIST **>(thd->alloc(sizeof(TABLE_LIST*) *
-                                                     tables_to_print))))
+  if (!(table= (TABLE_LIST **)thd->alloc(sizeof(TABLE_LIST*) *
+                                                non_const_tables)))
     return;  // out of memory
 
-  TABLE_LIST *tmp, **t= table + (tables_to_print - 1);
+  TABLE_LIST *tmp, **t= table + (non_const_tables - 1);
   while ((tmp= ti++))
   {
-    if (tmp->optimized_away && !print_const_tables)
+    if (tmp->optimized_away)
       continue;
     *t--= tmp;
   }
@@ -2946,7 +2907,7 @@ static void print_join(THD *thd,
   */
   if ((*table)->sj_cond())
   {
-    TABLE_LIST **end= table + tables_to_print;
+    TABLE_LIST **end= table + non_const_tables;
     for (TABLE_LIST **t2= table; t2!=end; t2++)
     {
       if (!(*t2)->sj_cond())
@@ -2958,8 +2919,8 @@ static void print_join(THD *thd,
       }
     }
   }
-  DBUG_ASSERT(tables_to_print >= 1);
-  print_table_array(thd, str, table, table + tables_to_print, query_type);
+  DBUG_ASSERT(non_const_tables >= 1);
+  print_table_array(thd, str, table, table + non_const_tables, query_type);
 }
 
 
@@ -3033,17 +2994,7 @@ void TABLE_LIST::print(THD *thd, String *str, enum_query_type query_type) const
       }
       else
       {
-        /**
-         Fix for printing empty string when internal_table_name is
-         used. Actual length of internal_table_name cannot be reduced
-         as server expects a valid string of length atleast 1 for any
-         table. So while printing we use the correct length of the
-         table_name i.e 0 when internal_table_name is used.
-        */
-        if (table_name != internal_table_name)
-          append_identifier(thd, str, table_name, table_name_length);
-        else
-          append_identifier(thd, str, table_name, 0);
+        append_identifier(thd, str, table_name, table_name_length);
         cmp_name= table_name;
       }
       if (partition_names && partition_names->elements)
@@ -3473,9 +3424,6 @@ void Query_tables_list::reset_query_tables_list(bool init)
   lock_tables_state= LTS_NOT_LOCKED;
   table_count= 0;
   using_match= FALSE;
-
-  /* Check the max size of the enum to control new enum values definitions. */
-  compile_time_assert(BINLOG_STMT_UNSAFE_COUNT <= 32);
 }
 
 
@@ -4050,9 +3998,6 @@ void LEX::first_lists_tables_same()
     TABLE_LIST *next;
     if (query_tables_last == &first_table->next_global)
       query_tables_last= first_table->prev_global;
-
-    if (query_tables_own_last == &first_table->next_global)
-      query_tables_own_last= first_table->prev_global;
 
     if ((next= *first_table->prev_global= first_table->next_global))
       next->prev_global= first_table->prev_global;
@@ -4745,8 +4690,8 @@ void st_lex_master_info::initialize()
   gtid_until_condition= UNTIL_SQL_BEFORE_GTIDS;
   view_id= NULL;
   until_after_gaps= false;
-  ssl= ssl_verify_server_cert= heartbeat_opt= repl_ignore_server_ids_opt=
-    retry_count_opt= auto_position= port_opt= LEX_MI_UNCHANGED;
+  ssl= ssl_verify_server_cert= heartbeat_opt= repl_ignore_server_ids_opt= 
+    retry_count_opt= auto_position= LEX_MI_UNCHANGED;
   ssl_key= ssl_cert= ssl_ca= ssl_capath= ssl_cipher= NULL;
   ssl_crl= ssl_crlpath= NULL;
   tls_version= NULL;

@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -124,7 +124,7 @@ cache_record_length(JOIN *join,uint idx)
   @return pointer to Key_use for the index with best 'ref' access, NULL if
           no 'ref' access method is found.
 */
-Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
+Key_use* Optimize_table_order::find_best_ref(const JOIN_TAB *tab,
                                              const table_map remaining_tables,
                                              const uint idx,
                                              const double prefix_rowcount,
@@ -186,8 +186,6 @@ Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
       type will be used.
     */
     key_part_map ref_or_null_part= 0;
-    /// Set dodgy_ref_cost only if that index is chosen for ref access.
-    bool is_dodgy= false;
 
     DBUG_PRINT("info", ("Considering ref access on key %s", keyinfo->name));
     Opt_trace_object trace_access_idx(trace);
@@ -515,11 +513,8 @@ Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
             */
             if (!table_deps && table->quick_keys.is_set(key) &&     // (1)
                 table->quick_key_parts[key] > cur_used_keyparts &&  // (2)
-                cur_fanout <= (double)table->quick_rows[key])        // (3)
-                {
-                  cur_fanout= (double)table->quick_rows[key];
-                  is_dodgy= true;
-                }
+                cur_fanout < (double)table->quick_rows[key])        // (3)
+              cur_fanout= (double)table->quick_rows[key];
 
             tmp_fanout= cur_fanout;
           }
@@ -686,11 +681,7 @@ Key_use* Optimize_table_order::find_best_ref(JOIN_TAB *tab,
       best_found_keytype= cur_keytype;
     }
 
-    bool chosen= (best_ref == start_key);
-    trace_access_idx.add("chosen", chosen);
-    if (chosen)
-      tab->dodgy_ref_cost= is_dodgy;
-
+    trace_access_idx.add("chosen", best_ref == start_key);
 
     if (best_found_keytype == CLUSTERED_PK)
     {
@@ -990,11 +981,11 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
         overestimating the total cost of scanning, the heuristic used
         here has to assume that the ratio is 1. A more fine-grained
         cost comparison will be done later in this function.
-    (2) The best way to perform table or index scan is to use 'range' access
-        using index IDX. If it is a 'tight range' scan (i.e not a loose index
-        scan' or 'index merge'), then ref access on the same index will
-        perform equal or better if ref access can use the same or more number
-        of key parts.
+    (2) This doesn't hold: the best way to perform table scan is to to perform
+        'range' access using index IDX, and the best way to perform 'ref'
+        access is to use the same index IDX, with the same or more key parts.
+        (note: it is not clear how this rule is/should be extended to
+        index_merge quick selects)
     (3) See above note about InnoDB.
     (4) NOT ("FORCE INDEX(...)" is used for table and there is 'ref' access
              path, but there is no quick select)
@@ -1024,9 +1015,7 @@ void Optimize_table_order::best_access_path(JOIN_TAB *tab,
   }
   else if (tab->quick() && best_ref &&                              // (2)
       tab->quick()->index == best_ref->key &&                       // (2)
-      (used_key_parts >= table->quick_key_parts[best_ref->key]) &&  // (2)
-      (tab->quick()->get_type() !=
-       QUICK_SELECT_I::QS_TYPE_GROUP_MIN_MAX))                      // (2)
+      (used_key_parts >= table->quick_key_parts[best_ref->key]))  // (2)
   {
     trace_access_scan.add_alnum("access_type", "range");
     tab->quick()->trace_quick_description(trace);
@@ -2268,7 +2257,7 @@ bool Optimize_table_order::greedy_search(table_map remaining_tables)
       join state will not be reverted back to its initial state because we
       don't "pop" tables already present in the partial plan.
     */
-    bool is_interleave_error MY_ATTRIBUTE((unused))= 
+    bool is_interleave_error __attribute__((unused))= 
       check_interleaving_with_nj (best_table);
     /* This has been already checked by best_extension_by_limited_search */
     DBUG_ASSERT(!is_interleave_error);

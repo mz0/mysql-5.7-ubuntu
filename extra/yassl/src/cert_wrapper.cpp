@@ -304,10 +304,7 @@ int CertManager::Validate()
         afterDate.type= cert.GetAfterDateType();
         afterDate.length= strlen((char *) afterDate.data) + 1;
         peerX509_ = NEW_YS X509(cert.GetIssuer(), iSz, cert.GetCommonName(),
-                                sSz, &beforeDate, &afterDate,
-                                cert.GetIssuerCnStart(), cert.GetIssuerCnLength(),
-                                cert.GetSubjectCnStart(), cert.GetSubjectCnLength()
-                                );
+                                sSz, &beforeDate, &afterDate);
 
         if (err == TaoCrypt::SIG_OTHER_E && verifyCallback_) {
             X509_STORE_CTX store;
@@ -353,9 +350,7 @@ int CertManager::SetPrivateKey(const x509& key)
         afterDate.type= cd.GetAfterDateType();
         afterDate.length= strlen((char *) afterDate.data) + 1;
         selfX509_ = NEW_YS X509(cd.GetIssuer(), iSz, cd.GetCommonName(),
-                                sSz, &beforeDate, &afterDate,
-                                cd.GetIssuerCnStart(), cd.GetIssuerCnLength(),
-                                cd.GetSubjectCnStart(), cd.GetSubjectCnLength());
+                                sSz, &beforeDate, &afterDate);
     }
     return 0;
 }
@@ -372,9 +367,7 @@ void CertManager::setPeerX509(X509* x)
     ASN1_STRING* after  = x->GetAfter();
 
     peerX509_ = NEW_YS X509(issuer->GetName(), issuer->GetLength(),
-        subject->GetName(), subject->GetLength(), before, after,
-        issuer->GetCnPosition(), issuer->GetCnLength(),
-        subject->GetCnPosition(), subject->GetCnLength());
+        subject->GetName(), subject->GetLength(), before, after);
 }
 
 

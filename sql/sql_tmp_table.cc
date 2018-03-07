@@ -1,4 +1,4 @@
-/* Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -248,7 +248,8 @@ static Field *create_tmp_field_for_schema(THD *thd, Item *item, TABLE *table)
                        If modify_item is 0 then fill_record() will update
                        the temporary table
 
-  @retval NULL On error.
+  @retval NULL On error. This also happens if the item is a prepared statement
+  parameter.
 
   @retval new_created field
 */
@@ -380,7 +381,6 @@ Field *create_tmp_field(THD *thd, TABLE *table,Item *item, Item::Type type,
   case Item::REF_ITEM:
   case Item::NULL_ITEM:
   case Item::VARBIN_ITEM:
-  case Item::PARAM_ITEM:
     if (make_copy_field)
     {
       DBUG_ASSERT(((Item_result_field*)item)->result_field);
@@ -396,6 +396,8 @@ Field *create_tmp_field(THD *thd, TABLE *table,Item *item, Item::Type type,
       break;
     result->set_derivation(item->collation.derivation);
     break;
+  case Item::PARAM_ITEM:
+    return NULL;
   default:					// Dosen't have to be stored
     DBUG_ASSERT(false);
     break;
@@ -875,8 +877,7 @@ create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
           goto update_hidden;
         }
       }
-
-      if (item->const_item() && (int)hidden_field_count <= 0)
+      if (item->const_item() && (int) hidden_field_count <= 0)
         continue; // We don't have to store this
     }
     if (type == Item::SUM_FUNC_ITEM && !group && !save_sum_fields)
@@ -961,6 +962,8 @@ create_tmp_table(THD *thd, Temp_table_param *param, List<Item> &fields,
 
       if (!new_field)
       {
+        if (type == Item::PARAM_ITEM)
+          goto update_hidden;
         DBUG_ASSERT(thd->is_fatal_error);
         goto err;				// Got OOM
       }
@@ -1495,7 +1498,7 @@ update_hidden:
     hash_key->actual_key_parts= hash_key->usable_key_parts= 1;
     hash_key->user_defined_key_parts= 1;
     hash_key->set_rec_per_key_array(NULL, NULL);
-    hash_key->set_in_memory_estimate(IN_MEMORY_ESTIMATE_UNKNOWN);
+    keyinfo->set_in_memory_estimate(IN_MEMORY_ESTIMATE_UNKNOWN);
     hash_key->algorithm= HA_KEY_ALG_UNDEF;
     if (distinct)
       hash_key->name= (char*) "<hash_distinct_key>";
@@ -2242,22 +2245,6 @@ bool create_innodb_tmp_table(TABLE *table, KEY *keyinfo)
   create_info.row_type= table->s->row_type;
   create_info.options|= HA_LEX_CREATE_TMP_TABLE |
                         HA_LEX_CREATE_INTERNAL_TMP_TABLE;
-  /*
-    INNODB's fixed length column size is restricted to 1024. Exceeding this can
-    result in incorrect behavior.
-  */
-  if (table->s->db_type() == innodb_hton)
-  {
-    for (Field **field= table->field; *field; ++field)
-    {
-      if ((*field)->type() == MYSQL_TYPE_STRING &&
-          (*field)->key_length() > 1024)
-      {
-        my_error(ER_TOO_LONG_KEY, MYF(0), 1024);
-        DBUG_RETURN(true);
-      }
-    }
-  }
 
   int error;
   if ((error= table->file->create(share->table_name.str, table, &create_info)))

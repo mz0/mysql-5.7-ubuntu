@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -31,7 +31,6 @@
 #include "sql_authentication.h"
 #include "sql_authorization.h"
 #include "debug_sync.h"
-#include "sql_user_table.h"
 
 const char *command_array[]=
 {
@@ -181,13 +180,14 @@ bool select_precheck(THD *thd, LEX *lex, TABLE_LIST *tables,
 
 bool Sql_cmd_update::multi_update_precheck(THD *thd, TABLE_LIST *tables)
 {
+  LEX *lex= thd->lex;
   DBUG_ENTER("multi_update_precheck");
 
   /*
     Ensure that we have UPDATE or SELECT privilege for each table
     The exact privilege is checked in mysql_multi_update()
   */
-  for (TABLE_LIST *table= tables; table; table= table->next_global)
+  for (TABLE_LIST *table= tables; table; table= table->next_local)
   {
     /*
       "uses_materialization()" covers the case where a prepared statement is
@@ -208,6 +208,25 @@ bool Sql_cmd_update::multi_update_precheck(THD *thd, TABLE_LIST *tables)
       DBUG_RETURN(TRUE);
 
     table->table_in_first_from_clause= 1;
+  }
+  /*
+    Is there tables of subqueries?
+  */
+  if (lex->select_lex != lex->all_selects_list)
+  {
+    DBUG_PRINT("info",("Checking sub query list"));
+    for (TABLE_LIST *table= tables; table; table= table->next_global)
+    {
+      if (!table->table_in_first_from_clause)
+      {
+	if (check_access(thd, SELECT_ACL, table->db,
+                         &table->grant.privilege,
+                         &table->grant.m_internal,
+                         0, 0) ||
+	    check_grant(thd, SELECT_ACL, table, FALSE, 1, FALSE))
+	  DBUG_RETURN(TRUE);
+      }
+    }
   }
 
   DBUG_RETURN(FALSE);
@@ -464,8 +483,7 @@ bool create_table_precheck(THD *thd, TABLE_LIST *tables,
       goto err;
   }
 
-  if (check_fk_parent_table_access(thd, create_table->db,
-                                   &lex->create_info, &lex->alter_info))
+  if (check_fk_parent_table_access(thd, &lex->create_info, &lex->alter_info))
     goto err;
 
   error= FALSE;
@@ -495,11 +513,8 @@ bool check_readonly(THD *thd, bool err_if_readonly)
   if (!opt_readonly)
     DBUG_RETURN(FALSE);
 
-  /*
-    Thread is replication slave or skip_read_only check is enabled for the
-    command, do not prohibit operation.
-  */
-  if (thd->slave_thread || thd->is_cmd_skip_readonly())
+  /* thread is replication slave, do not prohibit operation: */
+  if (thd->slave_thread)
     DBUG_RETURN(FALSE);
 
   bool is_super = thd->security_context()->check_access(SUPER_ACL);
@@ -1321,8 +1336,7 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
     }
 
     if (set_and_validate_user_attributes(thd, Str, what_to_set,
-                                         is_privileged_user,
-                                         revoke_grant?"REVOKE":"GRANT"))
+                                         is_privileged_user))
     {
       result= TRUE;
       continue;
@@ -1454,7 +1468,8 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
     additional privileges on the slave).
     Before ACLs are changed to execute fully or none at all, when
     some error happens, write an incident if one or more users are
-    granted/revoked successfully (it has a partial execution).
+    granted/revoked successfully (it has a partial execution), a
+    warning if no user is granted/revoked successfully.
   */
   if (result)
   {
@@ -1467,6 +1482,10 @@ int mysql_table_grant(THD *thd, TABLE_LIST *table_list,
         mysql_bin_log.write_incident(thd, true /* need_lock_log=true */,
                                      err_msg);
       }
+      else
+        sql_print_warning("Did not write failed '%s' into binary log while "
+                          "storing table level and column level grants in "
+                          "the privilege tables.", thd->query().str);
     }
   }
   else
@@ -1637,8 +1656,7 @@ bool mysql_routine_grant(THD *thd, TABLE_LIST *table_list, bool is_proc,
     }
 
     if (set_and_validate_user_attributes(thd, Str, what_to_set,
-                                         is_privileged_user,
-                                         revoke_grant?"REVOKE":"GRANT"))
+                                         is_privileged_user))
     {
       result= TRUE;
       continue;
@@ -1711,7 +1729,8 @@ bool mysql_routine_grant(THD *thd, TABLE_LIST *table_list, bool is_proc,
     /*
       Before ACLs are changed to execute fully or none at all, when
       some error happens, write an incident if one or more users are
-      granted/revoked successfully (it has a partial execution).
+      granted/revoked successfully (it has a partial execution), a
+      warning if no user is granted/revoked successfully.
     */
     if (result)
     {
@@ -1724,6 +1743,10 @@ bool mysql_routine_grant(THD *thd, TABLE_LIST *table_list, bool is_proc,
           mysql_bin_log.write_incident(thd, true /* need_lock_log=true */,
                                        err_msg);
         }
+        else
+          sql_print_warning("Did not write failed '%s' into binary log while "
+                            "storing routine level grants in the privilege "
+                            "tables.", thd->query().str);
       }
     }
     else
@@ -1889,8 +1912,7 @@ bool mysql_grant(THD *thd, const char *db, List <LEX_USER> &list,
     }
 
     if (set_and_validate_user_attributes(thd, Str, what_to_set,
-                                         is_privileged_user,
-                                         revoke_grant?"REVOKE":"GRANT"))
+                                         is_privileged_user))
     {
       result= TRUE;
       continue;
@@ -1977,7 +1999,8 @@ bool mysql_grant(THD *thd, const char *db, List <LEX_USER> &list,
   /*
     Before ACLs are changed to execute fully or none at all, when
     some error happens, write an incident if one or more users are
-    granted/revoked successfully (it has a partial execution).
+    granted/revoked successfully (it has a partial execution), a
+    warning if no user is granted/revoked successfully.
   */
   if (result)
   {
@@ -1990,6 +2013,10 @@ bool mysql_grant(THD *thd, const char *db, List <LEX_USER> &list,
         mysql_bin_log.write_incident(thd, true /* need_lock_log=true */,
                                      err_msg);
       }
+      else
+        sql_print_warning("Did not write failed '%s' into binary log while "
+                          "granting/revoking privileges in databases.",
+                          thd->query().str);
     }
   }
   else
@@ -3433,7 +3460,8 @@ user_end:
   /*
     Before ACLs are changed to execute fully or none at all, when
     some error happens, write an incident if one or more users are
-    revoked successfully (it has a partial execution).
+    revoked successfully (it has a partial execution), a warning
+    if no user is granted/revoked successfully.
   */
   if (result)
   {
@@ -3447,6 +3475,10 @@ user_end:
         mysql_bin_log.write_incident(thd, true /* need_lock_log=true */,
                                      err_msg);
       }
+      else
+        sql_print_warning("Did not write failed '%s' into binary log while "
+                          "revoking all_privileges from a list of users.",
+                          thd->query().str);
     }
   }
   else
@@ -4336,11 +4368,10 @@ bool check_global_access(THD *thd, ulong want_access)
 /**
   Checks foreign key's parent table access.
 
-  @param thd              [in]  Thread handler
-  @param child_table_db   [in]  Database of child table
-  @param create_info      [in]  Create information (like MAX_ROWS, ENGINE or
+  @param thd	       [in]	Thread handler
+  @param create_info   [in]     Create information (like MAX_ROWS, ENGINE or
                                 temporary table flag)
-  @param alter_info       [in]  Initial list of columns and indexes for the
+  @param alter_info    [in]     Initial list of columns and indexes for the
                                 table to be created
 
   @retval
@@ -4349,7 +4380,6 @@ bool check_global_access(THD *thd, ulong want_access)
    true	  error or access denied. Error is sent to client in this case.
 */
 bool check_fk_parent_table_access(THD *thd,
-                                  const char *child_table_db,
                                   HA_CREATE_INFO *create_info,
                                   Alter_info *alter_info)
 {
@@ -4392,17 +4422,10 @@ bool check_fk_parent_table_access(THD *thd,
         if (fk_key->ref_db.str && check_and_convert_db_name(&db_name, false))
           return true;
       }
+      else if (thd->lex->copy_db_to(&db_name.str, &db_name.length))
+        return true;
       else
-      {
-        /*
-          If database name for parent table is not specified explicitly
-          SEs assume that it is the same as database name of child table.
-          We do the same here.
-        */
         is_qualified_table_name= false;
-        db_name.str= const_cast<char*>(child_table_db);
-        db_name.length= strlen(child_table_db);
-      }
 
       // if lower_case_table_names is set then convert tablename to lower case.
       if (lower_case_table_names)

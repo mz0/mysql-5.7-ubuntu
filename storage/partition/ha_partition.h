@@ -2,7 +2,7 @@
 #define HA_PARTITION_INCLUDED
 
 /*
-   Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -423,13 +423,7 @@ public:
   }
   int rnd_pos_by_record(uchar *record)
   {
-    if (unlikely(get_part_for_delete(record,
-                                     m_table->record[0],
-                                     m_part_info,
-                                     &m_last_part))) {
-      return(HA_ERR_INTERNAL_ERROR);
-    }
-    return(m_file[m_last_part]->rnd_pos_by_record(record));
+    return Partition_helper::ph_rnd_pos_by_record(record);
   }
   void position(const uchar *record)
   {
@@ -1157,7 +1151,7 @@ public:
   {
     Partition_helper::set_part_info_low(part_info, early);
   }
-  uint alter_flags(uint flags MY_ATTRIBUTE((unused))) const
+  uint alter_flags(uint flags __attribute__((unused))) const
   {
     return (HA_PARTITION_FUNCTION_SUPPORTED |
             HA_FAST_CHANGE_PARTITION);
@@ -1173,6 +1167,13 @@ private:
   int rnd_end_in_part(uint part_id, bool scan);
   void position_in_last_part(uchar *ref, const uchar *record);
   int rnd_pos_in_part(uint part_id, uchar *buf, uchar *pos);
+  int rnd_pos_by_record_in_last_part(uchar *row)
+  {
+    /*
+      Not much overhead to use default function. This avoids out-of-sync code.
+    */
+    return handler::rnd_pos_by_record(row);
+  }
   int index_init_in_part(uint part, uint keynr, bool sorted);
   int index_end_in_part(uint part);
   int index_last_in_part(uint part, uchar *buf);

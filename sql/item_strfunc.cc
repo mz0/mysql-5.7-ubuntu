@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -239,9 +239,9 @@ String *Item_func_sha2::val_str_ascii(String *str)
   unsigned char digest_buf[SHA512_DIGEST_LENGTH];
   uint digest_length= 0;
 
-  String *input_string= args[0]->val_str(str);
   str->set_charset(&my_charset_bin);
 
+  String *input_string= args[0]->val_str(str);
   if (input_string == NULL)
   {
     null_value= TRUE;
@@ -1991,50 +1991,27 @@ String *Item_func_trim::val_str(String *str)
     }
     if (m_trim_trailing)
     {
-      // Optimize a common case, removing 0x20
-      if (remove_length == 1)
+      bool found;
+      const char *p= ptr;
+      do
       {
-        const char *save_ptr= ptr;
-        const char *new_end= ptr;
-        const char chr= (*remove_str)[0];
-        while (ptr < end)
+        found= false;
+        while (ptr + remove_length < end)
         {
           uint32 l;
           if ((l= my_ismbchar(res->charset(), ptr, end)))
-          {
             ptr+= l;
-            new_end= ptr;
-          }
-          else if (*ptr++ != chr)
-            new_end= ptr;
+          else
+            ++ptr;
         }
-        end= new_end;
-        ptr= save_ptr;
-      }
-      else
-      {
-        bool found;
-        const char *save_ptr= ptr;
-        do
+        if (ptr + remove_length == end && !memcmp(ptr, r_ptr, remove_length))
         {
-          found= false;
-          while (ptr + remove_length < end)
-          {
-            uint32 l;
-            if ((l= my_ismbchar(res->charset(), ptr, end)))
-              ptr+= l;
-            else
-              ++ptr;
-          }
-          if (ptr + remove_length == end && !memcmp(ptr, r_ptr, remove_length))
-          {
-            end-= remove_length;
-            found= true;
-          }
-          ptr= save_ptr;
+          end-= remove_length;
+          found= true;
         }
-        while (found);
+        ptr= p;
       }
+      while (found);
     }
   }
   else
@@ -2159,12 +2136,6 @@ static size_t calculate_password(String *str, char *buffer)
 #if defined(HAVE_OPENSSL)
   if (old_passwords == 2)
   {
-    if (str->length() > MAX_PLAINTEXT_LENGTH)
-    {
-      my_error(ER_NOT_VALID_PASSWORD, MYF(0));
-      return 0;
-    }
-
     my_make_scrambled_password(buffer, str->ptr(),
                                str->length());
     buffer_len= strlen(buffer) + 1;
@@ -2230,6 +2201,31 @@ String *Item_func_password::val_str_ascii(String *str)
            default_charset());
 
   return str;
+}
+
+char *Item_func_password::
+  create_password_hash_buffer(THD *thd, const char *password,  size_t pass_len)
+{
+  String *password_str= new (thd->mem_root)String(password, thd->variables.
+                                                    character_set_client);
+  my_validate_password_policy(password_str->ptr(), password_str->length());
+
+  char *buff= NULL;
+  if (thd->variables.old_passwords == 0)
+  {
+    /* Allocate memory for the password scramble and one extra byte for \0 */
+    buff= (char *) thd->alloc(SCRAMBLED_PASSWORD_CHAR_LENGTH + 1);
+    my_make_scrambled_password_sha1(buff, password, pass_len);
+  }
+#if defined(HAVE_OPENSSL)
+  else
+  {
+    /* Allocate memory for the password scramble and one extra byte for \0 */
+    buff= (char *) thd->alloc(CRYPT_MAX_PASSWORD_SIZE + 1);
+    my_make_scrambled_password(buff, password, pass_len);
+  }
+#endif
+  return buff;
 }
 
 bool Item_func_encrypt::itemize(Parse_context *pc, Item **res)
@@ -4333,37 +4329,33 @@ String *Item_func_unhex::val_str(String *str)
 
   from= res->ptr();
   tmp_value.length(length);
-  to= const_cast<char*>(tmp_value.ptr());
+  to= (char*) tmp_value.ptr();
   if (res->length() % 2)
   {
-    int hex_char= hexchar_to_int(*from++);
+    int hex_char;
+    *to++= hex_char= hexchar_to_int(*from++);
     if (hex_char == -1)
       goto err;
-    *to++= static_cast<char>(hex_char);
   }
-  for (end= res->ptr() + res->length(); from < end ; from+= 2, to++)
+  for (end=res->ptr()+res->length(); from < end ; from+=2, to++)
   {
-    int hex_char= hexchar_to_int(from[0]);
+    int hex_char;
+    *to= (hex_char= hexchar_to_int(from[0])) << 4;
     if (hex_char == -1)
       goto err;
-    *to= static_cast<char>(hex_char << 4);
-    hex_char= hexchar_to_int(from[1]);
+    *to|= hex_char= hexchar_to_int(from[1]);
     if (hex_char == -1)
       goto err;
-    *to|= hex_char;
   }
   null_value= false;
   return &tmp_value;
 
 err:
-  char buf[256];
-  String err(buf, sizeof(buf), system_charset_info);
-  err.length(0);
-  args[0]->print(&err, QT_NO_DATA_EXPANSION);
+  ErrConvString err(res);
   push_warning_printf(current_thd, Sql_condition::SL_WARNING,
                       ER_WRONG_VALUE_FOR_TYPE,
                       ER_THD(current_thd, ER_WRONG_VALUE_FOR_TYPE),
-                      "string", err.c_ptr_safe(), func_name());
+                      "string", res->ptr(), func_name());
 
   return NULL;
 }
@@ -4888,16 +4880,6 @@ String *Item_func_quote::val_str(String *str)
   *to= '\'';
 
 ret:
-  if (new_length > current_thd->variables.max_allowed_packet)
-  {
-    push_warning_printf(current_thd, Sql_condition::SL_WARNING,
-                        ER_WARN_ALLOWED_PACKET_OVERFLOWED,
-                        ER_THD(current_thd, ER_WARN_ALLOWED_PACKET_OVERFLOWED),
-                        func_name(),
-                        current_thd->variables.max_allowed_packet);
-    return error_str();
-  }
-
   tmp_value.length(new_length);
   tmp_value.set_charset(collation.collation);
   null_value= 0;
@@ -5298,7 +5280,7 @@ String *Item_func_gtid_subtract::val_str_ascii(String *str)
     if (status == RETURN_STATUS_OK)
     {
       Gtid_set set2(&sid_map, charp2, &status);
-      size_t length;
+      int length;
       // subtract, save result, return result
       if (status == RETURN_STATUS_OK)
       {

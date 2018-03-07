@@ -1517,7 +1517,7 @@ static int mi_drop_all_indexes(MI_CHECK *param, MI_INFO *info, my_bool force)
 	/* Save new datafile-name in temp_filename */
 
 int mi_repair(MI_CHECK *param, MI_INFO *info,
-	      char * name, int rep_quick, my_bool no_copy_stat)
+	      char * name, int rep_quick)
 {
   int error,got_error;
   ha_rows start_records,new_header_length;
@@ -1731,11 +1731,6 @@ err:
     /* Replace the actual file with the temporary file */
     if (new_file >= 0)
     {
-      myf flags= 0;
-      if (param->testflag & T_BACKUP_DATA)
-        flags |= MY_REDEL_MAKE_BACKUP;
-      if (no_copy_stat)
-        flags |= MY_REDEL_NO_COPY_STAT;
       mysql_file_close(new_file, MYF(0));
       info->dfile=new_file= -1;
       /*
@@ -1754,7 +1749,8 @@ err:
         info->s->file_map= NULL;
       }
       if (change_to_newfile(share->data_file_name, MI_NAME_DEXT, DATA_TMP_EXT,
-                            flags) ||
+			    (param->testflag & T_BACKUP_DATA ?
+			     MYF(MY_REDEL_MAKE_BACKUP): MYF(0))) ||
 	  mi_open_datafile(info,share,name,-1))
 	got_error=1;
 
@@ -1909,7 +1905,7 @@ int movepoint(MI_INFO *info, uchar *record, my_off_t oldpos,
 
 	/* Tell system that we want all memory for our cache */
 
-void lock_memory(MI_CHECK *param MY_ATTRIBUTE((unused)))
+void lock_memory(MI_CHECK *param __attribute__((unused)))
 {
 #ifdef SUN_OS				/* Key-cacheing thrases on sun 4.1 */
   if (param->opt_lock_memory)
@@ -1941,8 +1937,7 @@ int flush_blocks(MI_CHECK *param, KEY_CACHE *key_cache, File file)
 
 	/* Sort index for more efficent reads */
 
-int mi_sort_index(MI_CHECK *param, MI_INFO *info, char * name,
-                  my_bool no_copy_stat)
+int mi_sort_index(MI_CHECK *param, MI_INFO *info, char * name)
 {
   uint key;
   MI_KEYDEF *keyinfo;
@@ -2020,7 +2015,7 @@ int mi_sort_index(MI_CHECK *param, MI_INFO *info, char * name,
   share->kfile = -1;
   (void) mysql_file_close(new_file, MYF(MY_WME));
   if (change_to_newfile(share->index_file_name, MI_NAME_IEXT, INDEX_TMP_EXT,
-			no_copy_stat ? MYF(MY_REDEL_NO_COPY_STAT) : MYF(0)) ||
+			MYF(0)) ||
       mi_open_keyfile(share))
     goto err2;
   info->lock_type= F_UNLCK;			/* Force mi_readinfo to lock */
@@ -2224,8 +2219,6 @@ err:
     info		MyISAM handler to repair
     name		Name of table (for warnings)
     rep_quick		set to <> 0 if we should not change data file
-    no_copy_stat        Don't copy file stats from old to new file,
-                        assume that new file was created with correct stats
 
   RESULT
     0	ok
@@ -2233,7 +2226,7 @@ err:
 */
 
 int mi_repair_by_sort(MI_CHECK *param, MI_INFO *info,
-		      const char * name, int rep_quick, my_bool no_copy_stat)
+		      const char * name, int rep_quick)
 {
   int got_error;
   uint i;
@@ -2556,15 +2549,11 @@ err:
     /* Replace the actual file with the temporary file */
     if (new_file >= 0)
     {
-      myf flags= 0;
-      if (param->testflag & T_BACKUP_DATA)
-        flags |= MY_REDEL_MAKE_BACKUP;
-      if (no_copy_stat)
-        flags |= MY_REDEL_NO_COPY_STAT;
       mysql_file_close(new_file, MYF(0));
       info->dfile=new_file= -1;
       if (change_to_newfile(share->data_file_name,MI_NAME_DEXT, DATA_TMP_EXT,
-                            flags) ||
+			    (param->testflag & T_BACKUP_DATA ?
+			     MYF(MY_REDEL_MAKE_BACKUP): MYF(0))) ||
 	  mi_open_datafile(info,share,name,-1))
 	got_error=1;
     }
@@ -2612,8 +2601,6 @@ err:
     info		MyISAM handler to repair
     name		Name of table (for warnings)
     rep_quick		set to <> 0 if we should not change data file
-    no_copy_stat        Don't copy file stats from old to new file,
-                        assume that new file was created with correct stats
 
   DESCRIPTION
     Same as mi_repair_by_sort but do it multithreaded
@@ -2648,7 +2635,7 @@ err:
 */
 
 int mi_repair_parallel(MI_CHECK *param, MI_INFO *info,
-                       const char * name, int rep_quick, my_bool no_copy_stat)
+			const char * name, int rep_quick)
 {
   int got_error;
   uint i,key, total_key_length, istep;
@@ -3083,15 +3070,11 @@ err:
     /* Replace the actual file with the temporary file */
     if (new_file >= 0)
     {
-      myf flags= 0;
-      if (param->testflag & T_BACKUP_DATA)
-        flags |= MY_REDEL_MAKE_BACKUP;
-      if (no_copy_stat)
-        flags |= MY_REDEL_NO_COPY_STAT;
       mysql_file_close(new_file, MYF(0));
       info->dfile=new_file= -1;
       if (change_to_newfile(share->data_file_name, MI_NAME_DEXT, DATA_TMP_EXT,
-			    flags) ||
+			    (param->testflag & T_BACKUP_DATA ?
+			     MYF(MY_REDEL_MAKE_BACKUP): MYF(0))) ||
 	  mi_open_datafile(info,share,name,-1))
 	got_error=1;
     }

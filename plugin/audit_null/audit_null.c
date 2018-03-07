@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License as
@@ -127,12 +127,6 @@ static MYSQL_THDVAR_STR(event_order_check,
                         PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
                         "Event order check string", NULL, NULL, NULL);
 
-static MYSQL_THDVAR_UINT(event_order_check_consume_ignore_count,
-                         PLUGIN_VAR_RQCMDARG,
-                         "Do not consume event order string specified "
-                         "number of times.",
-                         NULL, NULL, 0, 0, UINT_MAX, 1);
-
 static MYSQL_THDVAR_INT(event_order_started,
                         PLUGIN_VAR_RQCMDARG,
                         "Plugin is in the event order check.",
@@ -148,7 +142,6 @@ static MYSQL_THDVAR_STR(event_record_def,
                         "Event recording definition", NULL, NULL, NULL);
 
 static MYSQL_THDVAR_STR(event_record,
-                        PLUGIN_VAR_READONLY |
                         PLUGIN_VAR_RQCMDARG | PLUGIN_VAR_MEMALLOC,
                         "Event recording", NULL, NULL, NULL);
 /*
@@ -165,7 +158,7 @@ static MYSQL_THDVAR_STR(event_record,
     1                    failure (cannot happen)
 */
 
-static int audit_null_plugin_init(void *arg MY_ATTRIBUTE((unused)))
+static int audit_null_plugin_init(void *arg __attribute__((unused)))
 {
   struct st_mysql_show_var *var;
 
@@ -191,7 +184,7 @@ static int audit_null_plugin_init(void *arg MY_ATTRIBUTE((unused)))
 
 */
 
-static int audit_null_plugin_deinit(void *arg MY_ATTRIBUTE((unused)))
+static int audit_null_plugin_deinit(void *arg __attribute__((unused)))
 {
   return(0);
 }
@@ -286,7 +279,6 @@ static void process_event_record(MYSQL_THD thd, LEX_CSTRING event_name,
     /* Add event. */
     add_event(thd, buffer, event_name, data, data_length);
 
-    my_free((void *)(buffer));
 
     if (!my_charset_latin1.coll->strnncoll(&my_charset_latin1,
                                            (const uchar *)record_begin.str,
@@ -300,8 +292,6 @@ static void process_event_record(MYSQL_THD thd, LEX_CSTRING event_name,
   }
   else
   {
-    const char *buffer;
-
     /* We have not started recording of events yet. */
     if (my_charset_latin1.coll->strnncoll(&my_charset_latin1,
                                           (const uchar *)record_begin.str,
@@ -312,10 +302,6 @@ static void process_event_record(MYSQL_THD thd, LEX_CSTRING event_name,
       /* Event not matching. */
       return;
     }
-
-    buffer= THDVAR(thd, event_record);
-
-    my_free((void *)(buffer));
 
     THDVAR(thd, event_record)= 0;
 
@@ -330,8 +316,7 @@ static void process_event_record(MYSQL_THD thd, LEX_CSTRING event_name,
   }
 }
 
-static int process_command(MYSQL_THD thd, LEX_CSTRING event_command,
-                           my_bool consume_event)
+static int process_command(MYSQL_THD thd, LEX_CSTRING event_command)
 {
   LEX_CSTRING abort_ret_command= { C_STRING_WITH_LEN("ABORT_RET") };
 
@@ -349,15 +334,11 @@ static int process_command(MYSQL_THD thd, LEX_CSTRING event_command,
     lex_cstring_set(&order_cstr, 
                     (const char *)THDVAR(thd, event_order_check));
 
-    /* Do not replace order string yet. */
-    if (consume_event)
-    {
-      memmove((char *) order_cstr.str,
-              (void *) status.str, status.length + 1);
+    memmove((char *)order_cstr.str,
+            (void *)status.str, status.length + 1);
 
-      THDVAR(thd, abort_value)= 1;
-      THDVAR(thd, abort_message)= 0;
-    }
+    THDVAR(thd, abort_value) = 1;
+    THDVAR(thd, abort_message) = 0;
 
     if (err_message)
     {
@@ -395,7 +376,6 @@ static int audit_null_notify(MYSQL_THD thd,
   LEX_CSTRING event_token= get_token(&order_str);
   LEX_CSTRING event_data= get_token(&order_str);
   LEX_CSTRING event_command= get_token(&order_str);
-  my_bool consume_event= TRUE;
 
   /* prone to races, oh well */
   number_of_calls++;
@@ -694,45 +674,31 @@ static int audit_null_notify(MYSQL_THD thd,
     else
     {
       LEX_CSTRING order_cstr;
-      ulong consume= THDVAR(thd, event_order_check_consume_ignore_count);
       lex_cstring_set(&order_cstr,
                       (const char *)THDVAR(thd, event_order_check));
 
       THDVAR(thd, event_order_started)= 1;
 
-      if (consume)
+      memmove((char*)order_cstr.str, (void*)order_str,
+        order_cstr.length - (order_str - order_cstr.str) + 1);
+
+      /* Count new length. */
+      lex_cstring_set(&order_cstr, order_cstr.str);
+
+      if (order_cstr.length == 0)
       {
-        /*
-          Do not consume event this time. Just decrease value and wait until
-          the next event is matched.
-        */
-        THDVAR(thd, event_order_check_consume_ignore_count)= consume - 1;
-        consume_event= FALSE;
-      }
-      else
-      {
-        /* Consume matched event. */
-        memmove((char*)order_cstr.str, (void*)order_str,
-          order_cstr.length - (order_str - order_cstr.str) + 1);
+        LEX_CSTRING status = { C_STRING_WITH_LEN("EVENT-ORDER-OK") };
 
-        /* Count new length. */
-        lex_cstring_set(&order_cstr, order_cstr.str);
+        memmove((char *)order_cstr.str,
+                (void *)status.str, status.length + 1);
 
-        if (order_cstr.length == 0)
-        {
-          LEX_CSTRING status = { C_STRING_WITH_LEN("EVENT-ORDER-OK") };
-
-          memmove((char *)order_cstr.str,
-                  (void *)status.str, status.length + 1);
-
-          /* event_order_started contains message. Do not verify it. */
-          THDVAR(thd, event_order_started)= 0;
-        }
+        /* event_order_started contains message. Do not verify it. */
+        THDVAR(thd, event_order_started)= 0;
       }
     }
   }
 
-  return process_command(thd, event_command, consume_event);
+  return process_command(thd, event_command);
 }
 
 /*
@@ -763,7 +729,6 @@ static struct st_mysql_sys_var* system_variables[] = {
   MYSQL_SYSVAR(abort_value),
 
   MYSQL_SYSVAR(event_order_check),
-  MYSQL_SYSVAR(event_order_check_consume_ignore_count),
   MYSQL_SYSVAR(event_order_started),
   MYSQL_SYSVAR(event_order_check_exact),
 

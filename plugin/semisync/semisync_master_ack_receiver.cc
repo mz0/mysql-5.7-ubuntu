@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,7 +15,6 @@
 
 #include "semisync_master.h"
 #include "semisync_master_ack_receiver.h"
-#include "semisync_master_socket_listener.h"
 
 extern ReplSemiSyncMaster repl_semisync;
 
@@ -187,6 +186,22 @@ inline void Ack_receiver::wait_for_slave_connection()
   mysql_cond_wait(&m_cond, &m_mutex);
 }
 
+my_socket Ack_receiver::get_slave_sockets(fd_set *fds)
+{
+  my_socket max_fd= INVALID_SOCKET;
+  unsigned int i;
+
+  FD_ZERO(fds);
+  for (i= 0; i < m_slaves.size(); i++)
+  {
+    my_socket fd= m_slaves[i].sock_fd();
+    max_fd= (fd > max_fd ? fd : max_fd);
+    FD_SET(fd, fds);
+  }
+
+  return max_fd;
+}
+
 /* Auxilary function to initialize a NET object with given net buffer. */
 static void init_net(NET *net, unsigned char *buff, unsigned int buff_len)
 {
@@ -201,12 +216,10 @@ void Ack_receiver::run()
 {
   NET net;
   unsigned char net_buff[REPLY_MESSAGE_MAX_LENGTH];
+
+  fd_set read_fds;
+  my_socket max_fd= INVALID_SOCKET;
   uint i;
-#ifdef HAVE_POLL
-  Poll_socket_listener listener(m_slaves);
-#else
-  Select_socket_listener listener(m_slaves);
-#endif //HAVE_POLL
 
   sql_print_information("Starting ack receiver thread");
 
@@ -218,6 +231,7 @@ void Ack_receiver::run()
 
   while (1)
   {
+    fd_set fds;
     Slave_vector_it it;
     int ret;
 
@@ -234,19 +248,25 @@ void Ack_receiver::run()
         mysql_mutex_unlock(&m_mutex);
         continue;
       }
-      if (!listener.init_slave_sockets())
-        goto end;
+
+      max_fd= get_slave_sockets(&read_fds);
       m_slaves_changed= false;
+      DBUG_PRINT("info", ("fd count %lu, max_fd %d", (ulong)m_slaves.size(),
+                          max_fd));
     }
-    ret= listener.listen_on_sockets();
+
+    struct timeval tv= {1, 0};
+    fds= read_fds;
+    /* select requires max fd + 1 for the first argument */
+    ret= select(max_fd+1, &fds, NULL, NULL, &tv);
     if (ret <= 0)
     {
       mysql_mutex_unlock(&m_mutex);
 
       ret= DBUG_EVALUATE_IF("rpl_semisync_simulate_select_error", -1, ret);
 
-      if (ret == -1 && errno != EINTR)
-        sql_print_information("Failed to wait on semi-sync dump sockets, "
+      if (ret == -1)
+        sql_print_information("Failed to select() on semi-sync dump sockets, "
                               "error: errno=%d", socket_errno);
       /* Sleep 1us, so other threads can catch the m_mutex easily. */
       my_sleep(1);
@@ -257,27 +277,19 @@ void Ack_receiver::run()
     i= 0;
     while (i < m_slaves.size())
     {
-      if (listener.is_socket_active(i))
+      if (FD_ISSET(m_slaves[i].sock_fd(), &fds))
       {
         ulong len;
+
+        net_clear(&net, 0);
         net.vio= &m_slaves[i].vio;
-        /*
-          Set compress flag. This is needed to support
-          Slave_compress_protocol flag enabled Slaves
-        */
-        net.compress=
-          m_slaves[i].thd->get_protocol_classic()->get_compression();
 
-        do {
-          net_clear(&net, 0);
-
-          len= my_net_read(&net);
-          if (likely(len != packet_error))
-            repl_semisync.reportReplyPacket(m_slaves[i].server_id(),
-                                            net.read_pos, len);
-          else if (net.last_errno == ER_NET_READ_ERROR)
-            listener.clear_socket_info(i);
-        } while (net.vio->has_data(net.vio));
+        len= my_net_read(&net);
+        if (likely(len != packet_error))
+          repl_semisync.reportReplyPacket(m_slaves[i].server_id(),
+                                          net.read_pos, len);
+        else if (net.last_errno == ER_NET_READ_ERROR)
+          FD_CLR(m_slaves[i].sock_fd(), &read_fds);
       }
       i++;
     }

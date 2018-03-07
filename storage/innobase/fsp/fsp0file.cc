@@ -85,7 +85,7 @@ Datafile::open_or_create(bool read_only_mode)
 {
 	bool success;
 	ut_a(m_filepath != NULL);
-	ut_ad(m_handle.m_file == OS_FILE_CLOSED);
+	ut_ad(m_handle == OS_FILE_CLOSED);
 
 	m_handle = os_file_create(
 		innodb_data_file_key, m_filepath, m_open_flags,
@@ -108,7 +108,7 @@ dberr_t
 Datafile::open_read_only(bool strict)
 {
 	bool	success = false;
-	ut_ad(m_handle.m_file == OS_FILE_CLOSED);
+	ut_ad(m_handle == OS_FILE_CLOSED);
 
 	/* This function can be called for file objects that do not need
 	to be opened, which is the case when the m_filepath is NULL */
@@ -145,7 +145,7 @@ dberr_t
 Datafile::open_read_write(bool read_only_mode)
 {
 	bool	success = false;
-	ut_ad(m_handle.m_file == OS_FILE_CLOSED);
+	ut_ad(m_handle == OS_FILE_CLOSED);
 
 	/* This function can be called for file objects that do not need
 	to be opened, which is the case when the m_filepath is NULL */
@@ -177,9 +177,9 @@ void
 Datafile::init_file_info()
 {
 #ifdef _WIN32
-	GetFileInformationByHandle(m_handle.m_file, &m_file_info);
+	GetFileInformationByHandle(m_handle, &m_file_info);
 #else
-	fstat(m_handle.m_file, &m_file_info);
+	fstat(m_handle, &m_file_info);
 #endif	/* WIN32 */
 }
 
@@ -188,11 +188,13 @@ Datafile::init_file_info()
 dberr_t
 Datafile::close()
 {
-	 if (m_handle.m_file != OS_FILE_CLOSED) {
-		ibool   success = os_file_close(m_handle);
+	if (m_handle != OS_FILE_CLOSED) {
+		ibool	success = os_file_close(m_handle);
 		ut_a(success);
-		m_handle.m_file = OS_FILE_CLOSED;
+
+		m_handle = OS_FILE_CLOSED;
 	}
+
 	return(DB_SUCCESS);
 }
 
@@ -307,8 +309,10 @@ datafile.  The Datafile must already be open.
 dberr_t
 Datafile::read_first_page(bool read_only_mode)
 {
-	if (m_handle.m_file == OS_FILE_CLOSED) {
+	if (m_handle == OS_FILE_CLOSED) {
+
 		dberr_t err = open_or_create(read_only_mode);
+
 		if (err != DB_SUCCESS) {
 			return(err);
 		}
@@ -712,7 +716,7 @@ Datafile::find_space_id()
 {
 	os_offset_t	file_size;
 
-	ut_ad(m_handle.m_file != OS_FILE_CLOSED);
+	ut_ad(m_handle != OS_FILE_CLOSED);
 
 	file_size = os_file_get_size(m_handle);
 
@@ -1042,6 +1046,8 @@ RemoteDatafile::create_link_file(
 	const char*	filepath,
 	bool		is_shared)
 {
+	os_file_t	file;
+	bool		success;
 	dberr_t		err = DB_SUCCESS;
 	char*		link_filepath = NULL;
 	char*		prev_filepath = NULL;
@@ -1090,26 +1096,14 @@ RemoteDatafile::create_link_file(
 		}
 	}
 
-	/** Check if the file already exists. */
-	FILE*			file = NULL;
-	bool			exists;
-	os_file_type_t		ftype;
+	file = os_file_create_simple_no_error_handling(
+		innodb_data_file_key, link_filepath,
+		OS_FILE_CREATE, OS_FILE_READ_WRITE,
+		srv_read_only_mode, &success);
 
-        bool success = os_file_status(link_filepath, &exists, &ftype);
-
-	ulint error = 0;
-	if (success && !exists) {
-
-		file = fopen(link_filepath, "w");
-		if (file == NULL) {
-			/* This call will print its own error message */
-			error = os_file_get_last_error(true);
-		}
-	} else {
-		error = OS_FILE_ALREADY_EXISTS;
-        }
-
-	if (error != 0) {
+	if (!success) {
+		/* This call will print its own error message */
+		ulint	error = os_file_get_last_error(true);
 
 		ib::error() << "Cannot create file " << link_filepath << ".";
 
@@ -1130,17 +1124,18 @@ RemoteDatafile::create_link_file(
 		return(err);
 	}
 
-	ulint rbytes = fwrite(filepath, 1, strlen(filepath), file);
-	if (rbytes != strlen(filepath)) {
+	IORequest	request(IORequest::WRITE);
 
-		os_file_get_last_error(true);
-                ib::error() << "Cannot write link file "
-				<< link_filepath << ".";
-		err = DB_ERROR;
-        }
+	/* Note: The pages are written out as uncompressed because we don't
+	have the compression algorithm information at this point. */
+
+	request.disable_compression();
+
+	err = os_file_write(
+		request, link_filepath, file, filepath, 0, strlen(filepath));
 
 	/* Close the file, we only need it at startup */
-	fclose(file);
+	os_file_close(file);
 
 	ut_free(link_filepath);
 

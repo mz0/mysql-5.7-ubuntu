@@ -1,4 +1,4 @@
-# Copyright (c) 2006, 2017, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
 # 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,8 +18,7 @@ IF(WIN32)
   CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12)
 ELSE()
   # There's a bug in unzipping prior to 2.8.2
-  # Debian 7 has the oldest cmake we need to support
-  CMAKE_MINIMUM_REQUIRED(VERSION 2.8.9)
+  CMAKE_MINIMUM_REQUIRED(VERSION 2.8.2)
 ENDIF()
 
 # We use CMAKE_SHARED_LIBRARY_<Lang>_FLAGS. See cmake --help-policy CMP0018
@@ -123,14 +122,7 @@ ELSE()
       ${MYSQL_PROJECT_NAME_DOCSTRING} FORCE)
   MARK_AS_ADVANCED(MYSQL_PROJECT_NAME)
 ENDIF()
-
 PROJECT(${MYSQL_PROJECT_NAME})
-
-SET(BUILD_IS_SINGLE_CONFIG TRUE)
-MESSAGE(STATUS "CMAKE_GENERATOR: ${CMAKE_GENERATOR}")
-IF(CMAKE_GENERATOR MATCHES "Visual Studio" OR CMAKE_GENERATOR STREQUAL "Xcode")
-  SET(BUILD_IS_SINGLE_CONFIG FALSE)
-ENDIF()
 
 # Maintainer mode is default on only for debug builds using GCC/G++
 IF(CMAKE_BUILD_TYPE MATCHES "Debug" OR WITH_DEBUG)
@@ -205,7 +197,6 @@ INCLUDE(lz4)
 INCLUDE(libevent)
 INCLUDE(ssl)
 INCLUDE(readline)
-INCLUDE(protobuf)
 INCLUDE(mysql_version)
 INCLUDE(libutils)
 INCLUDE(dtrace)
@@ -213,16 +204,8 @@ INCLUDE(plugin)
 INCLUDE(install_macros)
 INCLUDE(install_layout)
 INCLUDE(mysql_add_executable)
-INCLUDE(curl)
 
 # Handle options
-IF(EXISTS ${CMAKE_SOURCE_DIR}/rapid)
-  OPTION(WITH_RAPID
-    "Build additonal code(plugins) that is located in rapid directory" ON)
-ELSE()
-  OPTION(WITH_RAPID
-    "Build additonal code(plugins) that is located in rapid directory" OFF)
-ENDIF()
 OPTION(DISABLE_SHARED 
  "Don't build shared libraries, compile code as position-dependent" OFF)
 IF(DISABLE_SHARED)
@@ -257,8 +240,6 @@ MACRO (MY_CHECK_C_COMPILER_FLAG FLAG RESULT)
     FAIL_REGEX "unrecognized .*option"
     FAIL_REGEX "ignoring unknown option"
     FAIL_REGEX "[Ww]arning: [Oo]ption"
-    FAIL_REGEX "error: visibility"
-    FAIL_REGEX "warning: visibility"
     )
   SET(CMAKE_REQUIRED_FLAGS "${SAVE_CMAKE_REQUIRED_FLAGS}")
 ENDMACRO()
@@ -273,8 +254,6 @@ MACRO (MY_CHECK_CXX_COMPILER_FLAG FLAG RESULT)
     FAIL_REGEX "unrecognized .*option"
     FAIL_REGEX "ignoring unknown option"
     FAIL_REGEX "[Ww]arning: [Oo]ption"
-    FAIL_REGEX "error: visibility"
-    FAIL_REGEX "warning: visibility"
     )
   SET(CMAKE_REQUIRED_FLAGS "${SAVE_CMAKE_REQUIRED_FLAGS}")
 ENDMACRO()
@@ -300,25 +279,10 @@ MACRO(MY_SANITIZER_CHECK SAN_OPT RESULT)
 ENDMACRO()
 
 OPTION(WITH_ASAN "Enable address sanitizer" OFF)
-OPTION(WITH_ASAN_SCOPE "Enable -fsanitize-address-use-after-scope" OFF)
 IF(WITH_ASAN)
   MY_SANITIZER_CHECK("-fsanitize=address" WITH_ASAN_OK)
   IF(WITH_ASAN_OK)
     SET(HAVE_ASAN 1)
-    # This works with clang, but not gcc it seems.
-    MY_CHECK_CXX_COMPILER_FLAG(
-      "-fsanitize=address -fsanitize-address-use-after-scope"
-      HAVE_SANITIZE_SCOPE)
-    IF(WITH_ASAN_SCOPE AND HAVE_SANITIZE_SCOPE)
-      SET(CMAKE_C_FLAGS_DEBUG
-        "${CMAKE_C_FLAGS_DEBUG} -fsanitize-address-use-after-scope")
-      SET(CMAKE_C_FLAGS_RELWITHDEBINFO
-        "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fsanitize-address-use-after-scope")
-      SET(CMAKE_CXX_FLAGS_DEBUG
-        "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize-address-use-after-scope")
-      SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-        "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fsanitize-address-use-after-scope")
-    ENDIF()
   ELSE()
     MESSAGE(FATAL_ERROR "Do not know how to enable address sanitizer")
   ENDIF()
@@ -351,9 +315,11 @@ IF(WITH_ASAN AND WITH_MSAN)
 ENDIF()
 
 
-# Always enable debug sync for debug builds.
-SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DENABLED_DEBUG_SYNC")
-SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DENABLED_DEBUG_SYNC")
+OPTION(ENABLE_DEBUG_SYNC "Enable debug sync (debug builds only)" ON) 
+IF(ENABLE_DEBUG_SYNC) 
+  SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DENABLED_DEBUG_SYNC") 
+  SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -DENABLED_DEBUG_SYNC") 
+ENDIF() 
  
 # Older versions of ccache must be disabled: export CCACHE_DISABLE=1
 # See http://www.cmake.org/Wiki/CTest/Coverage
@@ -375,36 +341,6 @@ IF (ENABLE_GPROF AND NOT WIN32 AND NOT APPLE)
     "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -pg")
   SET(CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO
     "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -pg")
-ENDIF()
-
-IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
-  OPTION(REPRODUCIBLE_BUILD "Take extra pains to make build result independent of build location and time" OFF)
-ENDIF()
-IF(REPRODUCIBLE_BUILD)
-  SET(DEBUG_PREFIX_FLAGS
-    "-fdebug-prefix-map=${CMAKE_SOURCE_DIR}/=./ -fdebug-prefix-map=${CMAKE_CURRENT_BINARY_DIR}=./obj")
-
-  # See if -fdebug-prefix= commands are included in the debug output,
-  # making the build unreproducible with switches recorded.
-  # See https://gcc.gnu.org/bugzilla/show_bug.cgi?id=69821.
-  EXECUTE_PROCESS(COMMAND ${CMAKE_C_COMPILER} -g3 -x c -S -fdebug-prefix-map=foo=bar -o - -
-    INPUT_FILE /dev/null OUTPUT_VARIABLE DEBUG_PREFIX_MAP_RESULT)
-  IF(DEBUG_PREFIX_MAP_RESULT MATCHES "foo=bar")
-    SET(DEBUG_PREFIX_FLAGS "${DEBUG_PREFIX_FLAGS} -gno-record-gcc-switches")
-  ENDIF()
-
-  SET(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} ${DEBUG_PREFIX_FLAGS}")
-  SET(CMAKE_C_FLAGS_RELWITHDEBINFO
-    "${CMAKE_C_FLAGS_RELWITHDEBINFO} ${DEBUG_PREFIX_FLAGS}")
-  SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} ${DEBUG_PREFIX_FLAGS}")
-  SET(CMAKE_CXX_FLAGS_RELWITHDEBINFO
-    "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} ${DEBUG_PREFIX_FLAGS}")
-
-  SET(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,--build-id=none")
-  SET(CMAKE_CXX_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,--build-id=none")
-
-  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE
-    "${CMAKE_SOURCE_DIR}/scripts/invoke-with-relative-paths.pl")
 ENDIF()
 
 OPTION(ENABLED_LOCAL_INFILE
@@ -537,12 +473,6 @@ MYSQL_CHECK_EDITLINE()
 MYSQL_CHECK_LIBEVENT()
 # Add lz4 library
 MYSQL_CHECK_LZ4()
-# Add protoc and libprotobuf
-IF(NOT WITHOUT_SERVER)
-  MYSQL_CHECK_PROTOBUF()
-ENDIF()
-# Try and set CURL_LIBRARY
-MYSQL_CHECK_CURL()
 
 # Check for SYS_thread_selfid system call
 CHECK_C_SOURCE_COMPILES("
@@ -567,19 +497,6 @@ int main(int ac, char **av)
   return (tid != 0 ? 0 : 1);
 }"
 HAVE_SYS_GETTID)
-
-IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
-  # Check for pthread_setname_np
-  CHECK_C_SOURCE_COMPILES("
-  #include <pthread.h>
-  int main(int ac, char **av)
-  {
-    const char *thread_name= 0;
-    int ret = pthread_setname_np(pthread_self(), thread_name);
-    return ret;
-  }"
-  HAVE_PTHREAD_SETNAME_NP)
-ENDIF()
 
 # Check for pthread_getthreadid_np()
 CHECK_C_SOURCE_COMPILES("
@@ -621,6 +538,18 @@ IF(WITH_UNIT_TESTS)
  ENABLE_TESTING()
 ENDIF()
 
+IF(NOT WITHOUT_SERVER)
+  # Set default keyring plugin information
+  SET(KEYRING_PLUGIN_INFO "" CACHE INTERNAL "")
+  SET (MYSQLD_STATIC_PLUGIN_LIBS "" CACHE INTERNAL "")
+  SET (MYSQLD_STATIC_EMBEDDED_PLUGIN_LIBS "" CACHE INTERNAL "")
+  # Add storage engines and plugins.
+  CONFIGURE_PLUGINS()
+ELSE()
+  # We may still want Cluster client libraries, use -DWITH_NDBCLUSTER=1
+  ADD_SUBDIRECTORY(storage/ndb)
+ENDIF()
+
 ADD_SUBDIRECTORY(include)
 ADD_SUBDIRECTORY(dbug)
 ADD_SUBDIRECTORY(strings)
@@ -632,17 +561,11 @@ ADD_SUBDIRECTORY(libmysql)
 ADD_SUBDIRECTORY(libbinlogevents)
 ADD_SUBDIRECTORY(libbinlogstandalone)
 
-IF(NOT WITHOUT_SERVER)
-  SET (MYSQLD_STATIC_PLUGIN_LIBS "" CACHE INTERNAL "")
-  SET (MYSQLD_STATIC_EMBEDDED_PLUGIN_LIBS "" CACHE INTERNAL "")
-  # Add storage engines and plugins.
-  CONFIGURE_PLUGINS()
-ELSE()
-  # We may still want Cluster client libraries, use -DWITH_NDBCLUSTER=1
-  ADD_SUBDIRECTORY(storage/ndb)
-ENDIF()
-
 IF(WITH_UNIT_TESTS)
+  ADD_SUBDIRECTORY(unittest)
+  ADD_SUBDIRECTORY(unittest/examples)
+  ADD_SUBDIRECTORY(unittest/mytap)
+  ADD_SUBDIRECTORY(unittest/mytap/t)
   # Visual Studio 11 needs this extra flag in order to compile gmock.
   IF(WIN32)
     ADD_DEFINITIONS( /D _VARIADIC_MAX=10 )
@@ -651,14 +574,7 @@ IF(WITH_UNIT_TESTS)
   IF(HAVE_LLVM_LIBCPP)
     ADD_DEFINITIONS(-DGTEST_USE_OWN_TR1_TUPLE=1)
   ENDIF()
-
-  ADD_SUBDIRECTORY(unittest)
-  ADD_SUBDIRECTORY(unittest/examples)
-  ADD_SUBDIRECTORY(unittest/mytap)
-  ADD_SUBDIRECTORY(unittest/mytap/t)
-  IF(WITH_RAPID AND EXISTS ${CMAKE_SOURCE_DIR}/rapid/unittest/gunit)
-    ADD_SUBDIRECTORY(rapid/unittest/gunit)
-  ENDIF()
+  ADD_SUBDIRECTORY(unittest/gunit)
 ENDIF()
 
 ADD_SUBDIRECTORY(extra)
@@ -691,12 +607,14 @@ IF(NOT WITHOUT_SERVER)
   IF(EXISTS ${CMAKE_SOURCE_DIR}/internal/CMakeLists.txt)
     ADD_SUBDIRECTORY(internal)
   ENDIF()
-  ADD_SUBDIRECTORY(packaging/rpm-common)
+  # Set default value for --early_load_plugin.
+  # KEYRING_PLUGIN_INFO should have been set to appropriate default
+  # by keyring plugin
+  SET(DEFAULT_EARLY_PLUGIN_LOAD "\"${KEYRING_PLUGIN_INFO}\"" CACHE INTERNAL "Default value for --early_plugin_load" FORCE)
   ADD_SUBDIRECTORY(packaging/rpm-oel)
   ADD_SUBDIRECTORY(packaging/rpm-fedora)
   ADD_SUBDIRECTORY(packaging/rpm-sles)
   ADD_SUBDIRECTORY(packaging/rpm-docker)
-  ADD_SUBDIRECTORY(packaging/deb-in)
 ENDIF()
 
 INCLUDE(cmake/abi_check.cmake)
@@ -711,8 +629,6 @@ CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/sql/sql_builtin.cc.in
 CONFIGURE_FILE(
     ${CMAKE_SOURCE_DIR}/cmake/info_macros.cmake.in
     ${CMAKE_BINARY_DIR}/info_macros.cmake @ONLY)
-
-SET(KNOWN_CONVENIENCE_LIBRARIES "" CACHE INTERNAL "")
 
 # Handle the "INFO_*" files.
 INCLUDE(${CMAKE_BINARY_DIR}/info_macros.cmake)
@@ -783,22 +699,19 @@ INCLUDE(CPack)
 # Note that CMakeCache.txt contains cmake builtins for these variables,
 # *not* the values that will actually be used:
 
-
-IF(BUILD_IS_SINGLE_CONFIG)
+IF(CMAKE_GENERATOR MATCHES "Makefiles")
   MESSAGE(STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 ENDIF()
 GET_PROPERTY(cwd_definitions DIRECTORY PROPERTY COMPILE_DEFINITIONS)
 MESSAGE(STATUS "COMPILE_DEFINITIONS: ${cwd_definitions}")
 MESSAGE(STATUS "CMAKE_C_FLAGS: ${CMAKE_C_FLAGS}")
 MESSAGE(STATUS "CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
-MESSAGE(STATUS "CMAKE_C_LINK_FLAGS: ${CMAKE_C_LINK_FLAGS}")
-MESSAGE(STATUS "CMAKE_CXX_LINK_FLAGS: ${CMAKE_CXX_LINK_FLAGS}")
-IF(CMAKE_BUILD_TYPE AND BUILD_IS_SINGLE_CONFIG)
+IF(CMAKE_BUILD_TYPE AND CMAKE_GENERATOR MATCHES "Makefiles")
   STRING(TOUPPER "${CMAKE_BUILD_TYPE}" CMAKEBT)
   MESSAGE(STATUS "CMAKE_C_FLAGS_${CMAKEBT}: ${CMAKE_C_FLAGS_${CMAKEBT}}")
   MESSAGE(STATUS "CMAKE_CXX_FLAGS_${CMAKEBT}: ${CMAKE_CXX_FLAGS_${CMAKEBT}}")
 ENDIF()
-IF(NOT BUILD_IS_SINGLE_CONFIG)
+IF(NOT CMAKE_GENERATOR MATCHES "Makefiles")
   MESSAGE(STATUS "CMAKE_C_FLAGS_DEBUG: ${CMAKE_C_FLAGS_DEBUG}")
   MESSAGE(STATUS "CMAKE_CXX_FLAGS_DEBUG: ${CMAKE_CXX_FLAGS_DEBUG}")
   MESSAGE(STATUS

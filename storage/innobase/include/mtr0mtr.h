@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2015, Oracle and/or its affiliates. All Rights Reserved.
 Copyright (c) 2012, Facebook Inc.
 
 This program is free software; you can redistribute it and/or modify it under
@@ -101,7 +101,8 @@ savepoint. */
 /** Check if memo contains the given page.
 @return	TRUE if contains */
 #define mtr_memo_contains_page(m, p, t)					\
-	(m)->memo_contains_page_flagged((p), (t))
+				(m)->memo_contains_page(		\
+					(m)->get_memo(), (p), (t))
 #endif /* UNIV_DEBUG */
 
 /** Print info of an mtr handle. */
@@ -261,17 +262,13 @@ struct mtr_t {
 	MLOG_FILE_NAME records and a MLOG_CHECKPOINT marker.
 	The caller must invoke log_mutex_enter() and log_mutex_exit().
 	This is to be used at log_checkpoint().
-	@param[in]	checkpoint_lsn		the LSN of the log checkpoint
-	@param[in]	write_mlog_checkpoint	Write MLOG_CHECKPOINT marker
-						if it is enabled. */
-	void commit_checkpoint(
-		lsn_t	checkpoint_lsn,
-		bool	write_mlog_checkpoint);
+	@param[in]	checkpoint_lsn	the LSN of the log checkpoint  */
+	void commit_checkpoint(lsn_t checkpoint_lsn);
 
 	/** Return current size of the buffer.
 	@return	savepoint */
 	ulint get_savepoint() const
-		MY_ATTRIBUTE((warn_unused_result))
+		__attribute__((warn_unused_result))
 	{
 		ut_ad(is_active());
 		ut_ad(m_impl.m_magic_n == MTR_MAGIC_N);
@@ -301,7 +298,7 @@ struct mtr_t {
 	/** Get the logging mode.
 	@return	logging mode */
 	inline mtr_log_t get_log_mode() const
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
 
 	/** Change the logging mode.
 	@param mode	 logging mode
@@ -370,7 +367,7 @@ struct mtr_t {
 	@param type)	MLOG_1BYTE, MLOG_2BYTES, MLOG_4BYTES
 	@return	value read */
 	inline ulint read_ulint(const byte* ptr, mlog_id_t type) const
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
 
 	/** Locks a rw-latch in S mode.
 	NOTE: use mtr_s_lock().
@@ -409,10 +406,6 @@ struct mtr_t {
 	@param type	object type: MTR_MEMO_S_LOCK, ...
 	@return bool if lock released */
 	bool memo_release(const void* object, ulint type);
-	/** Release a page latch.
-	@param[in]	ptr	pointer to within a page frame
-	@param[in]	type	object type: MTR_MEMO_PAGE_X_FIX, ... */
-	void release_page(const void* ptr, mtr_memo_type_t type);
 
 	/** Note that the mini-transaction has modified data. */
 	void set_modified()
@@ -489,7 +482,18 @@ struct mtr_t {
 		mtr_buf_t*	memo,
 		const void*	object,
 		ulint		type)
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
+
+	/** Check if memo contains the given page.
+	@param memo	memo stack
+	@param ptr	pointer to buffer frame
+	@param type	type of object
+	@return	true if contains */
+	static bool memo_contains_page(
+		mtr_buf_t*	memo,
+		const byte*	ptr,
+		ulint		type)
+		__attribute__((warn_unused_result));
 
 	/** Check if memo contains the given item.
 	@param object		object to search
@@ -499,18 +503,11 @@ struct mtr_t {
 	bool memo_contains_flagged(const void* ptr, ulint flags) const;
 
 	/** Check if memo contains the given page.
-	@param[in]	ptr	pointer to within buffer frame
-	@param[in]	flags	specify types of object with OR of
+	@param ptr		buffer frame
+	@param flags		specify types of object with OR of
 				MTR_MEMO_PAGE_S_FIX... values
-	@return	the block
-	@retval	NULL	if not found */
-	buf_block_t* memo_contains_page_flagged(
-		const byte*	ptr,
-		ulint		flags) const;
-
-	/** Mark the given latched page as modified.
-	@param[in]	ptr	pointer to within buffer frame */
-	void memo_modify_page(const byte* ptr);
+	@return true if contains */
+	bool memo_contains_page_flagged(const byte* ptr, ulint flags) const;
 
 	/** Print info of an mtr handle. */
 	void print() const;
@@ -585,7 +582,7 @@ struct mtr_t {
 	@param block	block being x-fixed
 	@return true if the mtr is dirtying a clean page. */
 	static bool is_block_dirtied(const buf_block_t* block)
-		MY_ATTRIBUTE((warn_unused_result));
+		__attribute__((warn_unused_result));
 
 private:
 	/** Look up the system tablespace. */

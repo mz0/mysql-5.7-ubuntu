@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2016, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -109,67 +109,6 @@ struct Find {
 
 	/** The object instance to look for */
 	const void*	m_object;
-};
-
-/** Find a page frame */
-struct FindPage
-{
-	/** Constructor
-	@param[in]	ptr	pointer to within a page frame
-	@param[in]	flags	MTR_MEMO flags to look for */
-	FindPage(const void* ptr, ulint flags)
-		: m_ptr(ptr), m_flags(flags), m_slot(NULL)
-	{
-		/* We can only look for page-related flags. */
-		ut_ad(!(flags & ~(MTR_MEMO_PAGE_S_FIX
-				  | MTR_MEMO_PAGE_X_FIX
-				  | MTR_MEMO_PAGE_SX_FIX
-				  | MTR_MEMO_BUF_FIX
-				  | MTR_MEMO_MODIFY)));
-	}
-
-	/** Visit a memo entry.
-	@param[in]	slot	memo entry to visit
-	@retval	false	if a page was found
-	@retval	true	if the iteration should continue */
-	bool operator()(mtr_memo_slot_t* slot)
-	{
-		ut_ad(m_slot == NULL);
-
-		if (!(m_flags & slot->type) || slot->object == NULL) {
-			return(true);
-		}
-
-		buf_block_t* block = reinterpret_cast<buf_block_t*>(
-			slot->object);
-
-		if (m_ptr < block->frame
-		    || m_ptr >= block->frame + block->page.size.logical()) {
-			return(true);
-		}
-
-		m_slot = slot;
-		return(false);
-	}
-
-	/** @return the slot that was found */
-	mtr_memo_slot_t* get_slot() const
-	{
-		ut_ad(m_slot != NULL);
-		return(m_slot);
-	}
-	/** @return the block that was found */
-	buf_block_t* get_block() const
-	{
-		return(reinterpret_cast<buf_block_t*>(get_slot()->object));
-	}
-private:
-	/** Pointer inside a page frame to look for */
-	const void*const	m_ptr;
-	/** MTR_MEMO flags to look for */
-	const ulint		m_flags;
-	/** The slot corresponding to m_ptr */
-	mtr_memo_slot_t*	m_slot;
 };
 
 /** Release latches and decrement the buffer fix count.
@@ -585,13 +524,9 @@ but generated some redo log on a higher level, such as
 MLOG_FILE_NAME records and a MLOG_CHECKPOINT marker.
 The caller must invoke log_mutex_enter() and log_mutex_exit().
 This is to be used at log_checkpoint().
-@param[in]	checkpoint_lsn		the LSN of the log checkpoint
-@param[in]	write_mlog_checkpoint	Write MLOG_CHECKPOINT marker
-					if it is enabled. */
+@param[in]	checkpoint_lsn	the LSN of the log checkpoint  */
 void
-mtr_t::commit_checkpoint(
-	lsn_t	checkpoint_lsn,
-	bool	write_mlog_checkpoint)
+mtr_t::commit_checkpoint(lsn_t checkpoint_lsn)
 {
 	ut_ad(log_mutex_own());
 	ut_ad(is_active());
@@ -602,7 +537,6 @@ mtr_t::commit_checkpoint(
 	ut_ad(m_impl.m_memo.size() == 0);
 	ut_ad(!srv_read_only_mode);
 	ut_d(m_impl.m_state = MTR_STATE_COMMITTING);
-	ut_ad(write_mlog_checkpoint || m_impl.m_n_log_recs > 1);
 
 	/* This is a dirty read, for debugging. */
 	ut_ad(!recv_no_log_write);
@@ -618,24 +552,20 @@ mtr_t::commit_checkpoint(
 			&m_impl.m_log, MLOG_MULTI_REC_END, MLOG_1BYTE);
 	}
 
-	if (write_mlog_checkpoint) {
-		byte*	ptr = m_impl.m_log.push<byte*>(SIZE_OF_MLOG_CHECKPOINT);
+	byte*	ptr = m_impl.m_log.push<byte*>(SIZE_OF_MLOG_CHECKPOINT);
 #if SIZE_OF_MLOG_CHECKPOINT != 9
 # error SIZE_OF_MLOG_CHECKPOINT != 9
 #endif
-		*ptr = MLOG_CHECKPOINT;
-		mach_write_to_8(ptr + 1, checkpoint_lsn);
-	}
+	*ptr = MLOG_CHECKPOINT;
+	mach_write_to_8(ptr + 1, checkpoint_lsn);
 
 	Command	cmd(this);
 	cmd.finish_write(m_impl.m_log.size());
 	cmd.release_resources();
 
-	if (write_mlog_checkpoint) {
-		DBUG_PRINT("ib_log",
-			   ("MLOG_CHECKPOINT(" LSN_PF ") written at " LSN_PF,
-			    checkpoint_lsn, log_sys->lsn));
-	}
+	DBUG_PRINT("ib_log",
+		   ("MLOG_CHECKPOINT(" LSN_PF ") written at " LSN_PF,
+		    checkpoint_lsn, log_sys->lsn));
 }
 
 #ifdef UNIV_DEBUG
@@ -777,31 +707,6 @@ mtr_t::memo_release(const void* object, ulint type)
 	return(false);
 }
 
-/** Release a page latch.
-@param[in]	ptr	pointer to within a page frame
-@param[in]	type	object type: MTR_MEMO_PAGE_X_FIX, ... */
-void
-mtr_t::release_page(const void* ptr, mtr_memo_type_t type)
-{
-	ut_ad(m_impl.m_magic_n == MTR_MAGIC_N);
-	ut_ad(is_active());
-
-	/* We cannot release a page that has been written to in the
-	middle of a mini-transaction. */
-	ut_ad(!m_impl.m_modifications || type != MTR_MEMO_PAGE_X_FIX);
-
-	FindPage		find(ptr, type);
-	Iterate<FindPage>	iterator(find);
-
-	if (!m_impl.m_memo.for_each_block_in_reverse(iterator)) {
-		memo_slot_release(find.get_slot());
-		return;
-	}
-
-	/* The page was not found! */
-	ut_ad(0);
-}
-
 /** Prepare to write the mini-transaction log to the redo log buffer.
 @return number of bytes to write in finish_write() */
 ulint
@@ -834,7 +739,7 @@ mtr_t::Command::prepare_write()
 
 	fil_space_t*	space = m_impl->m_user_space;
 
-	if (space != NULL && is_system_or_undo_tablespace(space->id)) {
+	if (space != NULL && space->id <= srv_undo_tablespaces_open) {
 		/* Omit MLOG_FILE_NAME for predefined tablespaces. */
 		space = NULL;
 	}
@@ -1028,6 +933,17 @@ mtr_t::memo_contains(
 	return(!memo->for_each_block_in_reverse(iterator));
 }
 
+/** Check if memo contains the given page.
+@param memo		info
+@param ptr		record
+@param type		type of
+@return	true if contains */
+bool
+mtr_t::memo_contains_page(mtr_buf_t* memo, const byte* ptr, ulint type)
+{
+	return(memo_contains(memo, buf_block_align(ptr), type));
+}
+
 /** Debug check for flags */
 struct FlaggedCheck {
 	FlaggedCheck(const void* ptr, ulint flags)
@@ -1069,35 +985,16 @@ mtr_t::memo_contains_flagged(const void* ptr, ulint flags) const
 }
 
 /** Check if memo contains the given page.
-@param[in]	ptr	pointer to within buffer frame
-@param[in]	flags	specify types of object with OR of
+@param ptr		buffer frame
+@param flags		specify types of object with OR of
 			MTR_MEMO_PAGE_S_FIX... values
-@return	the block
-@retval	NULL	if not found */
-buf_block_t*
+@return true if contains */
+bool
 mtr_t::memo_contains_page_flagged(
 	const byte*	ptr,
 	ulint		flags) const
 {
-	FindPage		check(ptr, flags);
-	Iterate<FindPage>	iterator(check);
-
-	return(m_impl.m_memo.for_each_block_in_reverse(iterator)
-	       ? NULL : check.get_block());
-}
-
-/** Mark the given latched page as modified.
-@param[in]	ptr	pointer to within buffer frame */
-void
-mtr_t::memo_modify_page(const byte* ptr)
-{
-	buf_block_t*	block = memo_contains_page_flagged(
-		ptr, MTR_MEMO_PAGE_X_FIX | MTR_MEMO_PAGE_SX_FIX);
-	ut_ad(block != NULL);
-
-	if (!memo_contains(get_memo(), block, MTR_MEMO_MODIFY)) {
-		memo_push(block, MTR_MEMO_MODIFY);
-	}
+	return(memo_contains_flagged(buf_block_align(ptr), flags));
 }
 
 /** Print info of an mtr handle. */

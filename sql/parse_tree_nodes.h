@@ -1,4 +1,4 @@
-/* Copyright (c) 2013, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2013, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -683,12 +683,7 @@ public:
          opt_procedure_analyse->contextualize(pc)))
       return true;
 
-    /*
-      @todo: explain should not affect how we construct the query data
-      structure. Instead, consider to let lock_tables() adjust lock
-      requests according to the explain flag.
-    */
-    if (opt_select_lock_type.is_set && !pc->thd->lex->is_explain())
+    if (opt_select_lock_type.is_set)
     {
       pc->select->set_lock_for_tables(opt_select_lock_type.lock_type);
       pc->thd->lex->safe_to_cache_query=
@@ -1713,7 +1708,7 @@ class PT_transaction_access_mode : public PT_transaction_characteristic
 
 public:
   explicit PT_transaction_access_mode(bool is_read_only)
-  : super("transaction_read_only", (int32) is_read_only)
+  : super("tx_read_only", (int32) is_read_only)
   {}
 };
 
@@ -1724,7 +1719,7 @@ class PT_isolation_level : public PT_transaction_characteristic
 
 public:
   explicit PT_isolation_level(enum_tx_isolation level)
-  : super("transaction_isolation", (int32) level)
+  : super("tx_isolation", (int32) level)
   {}
 };
 
@@ -2261,12 +2256,7 @@ public:
     DBUG_ASSERT(opt_procedure_analyse_clause == NULL ||
                 (opt_into1 == NULL && opt_into2 == NULL));
 
-    /*
-      @todo: explain should not affect how we construct the query data
-      structure. Instead, consider to let lock_tables() adjust lock
-      requests according to the explain flag.
-    */
-    if (opt_select_lock_type.is_set && !pc->thd->lex->is_explain())
+    if (opt_select_lock_type.is_set)
     {
       pc->select->set_lock_for_tables(opt_select_lock_type.lock_type);
       pc->thd->lex->safe_to_cache_query=

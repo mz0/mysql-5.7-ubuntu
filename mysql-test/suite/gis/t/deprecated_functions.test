@@ -9,7 +9,6 @@
 # Author : Erik Frøseth                                             #
 #                                                                   #
 #####################################################################
---source include/no_protocol.inc
 
 SELECT Contains(NULL, NULL);
 SELECT Disjoint(NULL, NULL);

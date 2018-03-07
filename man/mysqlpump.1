@@ -1,13 +1,13 @@
 '\" t
 .\"     Title: \fBmysqlpump\fR
 .\"    Author: [FIXME: author] [see http://docbook.sf.net/el/author]
-.\" Generator: DocBook XSL Stylesheets v1.79.1 <http://docbook.sf.net/>
-.\"      Date: 12/26/2017
+.\" Generator: DocBook XSL Stylesheets v1.78.1 <http://docbook.sf.net/>
+.\"      Date: 02/01/2016
 .\"    Manual: MySQL Database System
 .\"    Source: MySQL 5.7
 .\"  Language: English
 .\"
-.TH "\FBMYSQLPUMP\FR" "1" "12/26/2017" "MySQL 5\&.7" "MySQL Database System"
+.TH "\FBMYSQLPUMP\FR" "1" "02/01/2016" "MySQL 5\&.7" "MySQL Database System"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
 .\" -----------------------------------------------------------------
@@ -27,6 +27,11 @@
 .\" -----------------------------------------------------------------
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
+.\" mysqlpump
+.\" dumping: databases and tables
+.\" backups: databases and tables
+.\" databases: dumping
+.\" tables: dumping
 .SH "NAME"
 mysqlpump \- a database backup program
 .SH "SYNOPSIS"
@@ -377,6 +382,8 @@ mysqlpump Option Descriptions
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: help option
+.\" help option: mysqlpump
 \fB\-\-help\fR,
 \fB\-?\fR
 .sp
@@ -391,6 +398,8 @@ Display a help message and exit\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: add-drop-database option
+.\" add-drop-database option: mysqlpump
 \fB\-\-add\-drop\-database\fR
 .sp
 Write a
@@ -408,6 +417,8 @@ statement\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: add-drop-table option
+.\" add-drop-table option: mysqlpump
 \fB\-\-add\-drop\-table\fR
 .sp
 Write a
@@ -425,6 +436,8 @@ statement\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: add-drop-user option
+.\" add-drop-user option: mysqlpump
 \fB\-\-add\-drop\-user\fR
 .sp
 Write a
@@ -442,6 +455,8 @@ statement\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: add-locks option
+.\" add-locks option: mysqlpump
 \fB\-\-add\-locks\fR
 .sp
 Surround each table dump with
@@ -449,7 +464,7 @@ LOCK TABLES
 and
 UNLOCK TABLES
 statements\&. This results in faster inserts when the dump file is reloaded\&. See
-Section\ \&8.2.4.1, \(lqOptimizing INSERT Statements\(rq\&.
+Section\ \&8.2.2.1, \(lqSpeed of INSERT Statements\(rq\&.
 .sp
 This option does not work with parallelism because
 INSERT
@@ -471,6 +486,8 @@ are mutually exclusive\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: all-databases option
+.\" all-databases option: mysqlpump
 \fB\-\-all\-databases\fR,
 \fB\-A\fR
 .sp
@@ -491,6 +508,8 @@ are mutually exclusive\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: bind-address option
+.\" bind-address option: mysqlpump
 \fB\-\-bind\-address=\fR\fB\fIip_address\fR\fR
 .sp
 On a computer having multiple network interfaces, use this option to select which interface to use for connecting to the MySQL server\&.
@@ -504,6 +523,8 @@ On a computer having multiple network interfaces, use this option to select whic
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: character-sets-dir option
+.\" character-sets-dir option: mysqlpump
 \fB\-\-character\-sets\-dir=\fR\fB\fIpath\fR\fR
 .sp
 The directory where character sets are installed\&. See
@@ -518,6 +539,8 @@ Section\ \&10.5, \(lqCharacter Set Configuration\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: complete-insert option
+.\" complete-insert option: mysqlpump
 \fB\-\-complete\-insert\fR
 .sp
 Write complete
@@ -533,6 +556,8 @@ statements that include column names\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: compress option
+.\" compress option: mysqlpump
 \fB\-\-compress\fR,
 \fB\-C\fR
 .sp
@@ -547,6 +572,8 @@ Compress all information sent between the client and the server if both support 
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: compress-output option
+.\" compress-output option: mysqlpump
 \fB\-\-compress\-output=\fR\fB\fIalgorithm\fR\fR
 .sp
 By default,
@@ -616,6 +643,8 @@ shell> \fBopenssl zlib \-d < \fR\fB\fIinput_file\fR\fR\fB > \fR\fB\fIoutput_file
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: databases option
+.\" databases option: mysqlpump
 \fB\-\-databases\fR,
 \fB\-B\fR
 .sp
@@ -639,6 +668,8 @@ are mutually exclusive\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: debug option
+.\" debug option: mysqlpump
 \fB\-\-debug[=\fR\fB\fIdebug_options\fR\fR\fB]\fR,
 \fB\-# [\fR\fB\fIdebug_options\fR\fR\fB]\fR
 .sp
@@ -657,6 +688,8 @@ d:t:O,/tmp/mysqlpump\&.trace\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: debug-check option
+.\" debug-check option: mysqlpump
 \fB\-\-debug\-check\fR
 .sp
 Print some debugging information when the program exits\&.
@@ -670,6 +703,8 @@ Print some debugging information when the program exits\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: debug-info option
+.\" debug-info option: mysqlpump
 \fB\-\-debug\-info\fR,
 \fB\-T\fR
 .sp
@@ -684,10 +719,12 @@ Print debugging information and memory and CPU usage statistics when the program
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: default-auth option
+.\" default-auth option: mysqlpump
 \fB\-\-default\-auth=\fR\fB\fIplugin\fR\fR
 .sp
 A hint about the client\-side authentication plugin to use\&. See
-Section\ \&6.3.9, \(lqPluggable Authentication\(rq\&.
+Section\ \&6.3.8, \(lqPluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -698,6 +735,8 @@ Section\ \&6.3.9, \(lqPluggable Authentication\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: default-character-set option
+.\" default-character-set option: mysqlpump
 \fB\-\-default\-character\-set=\fR\fB\fIcharset_name\fR\fR
 .sp
 Use
@@ -717,6 +756,8 @@ utf8\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: default-parallelism option
+.\" default-parallelism option: mysqlpump
 \fB\-\-default\-parallelism=\fR\fB\fIN\fR\fR
 .sp
 The default number of threads for each parallel processing queue\&. The default is 2\&.
@@ -776,6 +817,8 @@ shell> \fBmysqlpump \-\-single\-transaction \-\-default\-parallelism=0\fR
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: defaults-extra-file option
+.\" defaults-extra-file option: mysqlpump
 \fB\-\-defaults\-extra\-file=\fR\fB\fIfile_name\fR\fR
 .sp
 Read this option file after the global option file but (on Unix) before the user option file\&. If the file does not exist or is otherwise inaccessible, an error occurs\&.
@@ -791,15 +834,13 @@ is interpreted relative to the current directory if given as a relative path nam
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: defaults-file option
+.\" defaults-file option: mysqlpump
 \fB\-\-defaults\-file=\fR\fB\fIfile_name\fR\fR
 .sp
 Use only the given option file\&. If the file does not exist or is otherwise inaccessible, an error occurs\&.
 \fIfile_name\fR
 is interpreted relative to the current directory if given as a relative path name rather than a full path name\&.
-.sp
-Exception: Even with
-\fB\-\-defaults\-file\fR, client programs read
-\&.mylogin\&.cnf\&.
 .RE
 .sp
 .RS 4
@@ -810,6 +851,8 @@ Exception: Even with
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: defaults-group-suffix option
+.\" defaults-group-suffix option: mysqlpump
 \fB\-\-defaults\-group\-suffix=\fR\fB\fIstr\fR\fR
 .sp
 Read not only the usual option groups, but also groups with the usual names and a suffix of
@@ -838,6 +881,8 @@ groups\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: defer-table-indexes option
+.\" defer-table-indexes option: mysqlpump
 \fB\-\-defer\-table\-indexes\fR
 .sp
 In the dump output, defer index creation for each table until after its rows have been loaded\&. This works for all storage engines, but for
@@ -857,6 +902,8 @@ to disable it\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: events option
+.\" events option: mysqlpump
 \fB\-\-events\fR
 .sp
 Include Event Scheduler events for the dumped databases in the output\&. Event dumping requires the
@@ -889,6 +936,8 @@ to disable it\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: exclude-databases option
+.\" exclude-databases option: mysqlpump
 \fB\-\-exclude\-databases=\fR\fB\fIdb_list\fR\fR
 .sp
 Do not dump the databases in
@@ -904,6 +953,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: exclude-events option
+.\" exclude-events option: mysqlpump
 \fB\-\-exclude\-events=\fR\fB\fIevent_list\fR\fR
 .sp
 Do not dump the databases in
@@ -919,6 +970,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: exclude-routines option
+.\" exclude-routines option: mysqlpump
 \fB\-\-exclude\-routines=\fR\fB\fIroutine_list\fR\fR
 .sp
 Do not dump the events in
@@ -934,6 +987,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: exclude-tables option
+.\" exclude-tables option: mysqlpump
 \fB\-\-exclude\-tables=\fR\fB\fItable_list\fR\fR
 .sp
 Do not dump the tables in
@@ -949,6 +1004,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: exclude-triggers option
+.\" exclude-triggers option: mysqlpump
 \fB\-\-exclude\-triggers=\fR\fB\fItrigger_list\fR\fR
 .sp
 Do not dump the triggers in
@@ -964,6 +1021,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: exclude-users option
+.\" exclude-users option: mysqlpump
 \fB\-\-exclude\-users=\fR\fB\fIuser_list\fR\fR
 .sp
 Do not dump the user accounts in
@@ -979,6 +1038,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: extended-insert option
+.\" extended-insert option: mysqlpump
 \fB\-\-extended\-insert=\fR\fB\fIN\fR\fR
 .sp
 Write
@@ -1002,6 +1063,8 @@ statement per table row\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: hex-blob option
+.\" hex-blob option: mysqlpump
 \fB\-\-hex\-blob\fR
 .sp
 Dump binary columns using hexadecimal notation (for example,
@@ -1023,6 +1086,8 @@ BIT\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: host option
+.\" host option: mysqlpump
 \fB\-\-host=\fR\fB\fIhost_name\fR\fR,
 \fB\-h \fR\fB\fIhost_name\fR\fR
 .sp
@@ -1037,6 +1102,8 @@ Dump data from the MySQL server on the given host\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: include-databases option
+.\" include-databases option: mysqlpump
 \fB\-\-include\-databases=\fR\fB\fIdb_list\fR\fR
 .sp
 Dump the databases in
@@ -1052,6 +1119,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: include-events option
+.\" include-events option: mysqlpump
 \fB\-\-include\-events=\fR\fB\fIevent_list\fR\fR
 .sp
 Dump the events in
@@ -1067,6 +1136,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: include-routines option
+.\" include-routines option: mysqlpump
 \fB\-\-include\-routines=\fR\fB\fIroutine_list\fR\fR
 .sp
 Dump the routines in
@@ -1082,6 +1153,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: include-tables option
+.\" include-tables option: mysqlpump
 \fB\-\-include\-tables=\fR\fB\fItable_list\fR\fR
 .sp
 Dump the tables in
@@ -1097,6 +1170,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: include-triggers option
+.\" include-triggers option: mysqlpump
 \fB\-\-include\-triggers=\fR\fB\fItrigger_list\fR\fR
 .sp
 Dump the triggers in
@@ -1112,6 +1187,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: include-users option
+.\" include-users option: mysqlpump
 \fB\-\-include\-users=\fR\fB\fIuser_list\fR\fR
 .sp
 Dump the user accounts in
@@ -1127,6 +1204,8 @@ mysqlpump Object Selection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: insert-ignore option
+.\" insert-ignore option: mysqlpump
 \fB\-\-insert\-ignore\fR
 .sp
 Write
@@ -1144,6 +1223,8 @@ statements\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: log-error-file option
+.\" log-error-file option: mysqlpump
 \fB\-\-log\-error\-file=\fR\fB\fIfile_name\fR\fR
 .sp
 Log warnings and errors by appending them to the named file\&. If this option is not given,
@@ -1159,6 +1240,8 @@ writes warnings and errors to the standard error output\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: login-path option
+.\" login-path option: mysqlpump
 \fB\-\-login\-path=\fR\fB\fIname\fR\fR
 .sp
 Read options from the named login path in the
@@ -1179,6 +1262,8 @@ utility\&. See
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: max-allowed-packet option
+.\" max-allowed-packet option: mysqlpump
 \fB\-\-max\-allowed\-packet=\fR\fB\fIN\fR\fR
 .sp
 The maximum size of the buffer for client/server communication\&. The default is 24MB, the maximum is 1GB\&.
@@ -1192,6 +1277,8 @@ The maximum size of the buffer for client/server communication\&. The default is
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: net-buffer-length option
+.\" net-buffer-length option: mysqlpump
 \fB\-\-net\-buffer\-length=\fR\fB\fIN\fR\fR
 .sp
 The initial size of the buffer for client/server communication\&. When creating multiple\-row
@@ -1215,6 +1302,8 @@ system variable has a value at least this large\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: no-create-db option
+.\" no-create-db option: mysqlpump
 \fB\-\-no\-create\-db\fR
 .sp
 Suppress any
@@ -1230,6 +1319,8 @@ statements that might otherwise be included in the output\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: no-create-info option
+.\" no-create-info option: mysqlpump
 \fB\-\-no\-create\-info\fR,
 \fB\-t\fR
 .sp
@@ -1246,6 +1337,8 @@ statements that create each dumped table\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: no-defaults option
+.\" no-defaults option: mysqlpump
 \fB\-\-no\-defaults\fR
 .sp
 Do not read any option files\&. If program startup fails due to reading unknown options from an option file,
@@ -1271,6 +1364,8 @@ utility\&. See
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: parallel-schemas option
+.\" parallel-schemas option: mysqlpump
 \fB\-\-parallel\-schemas=[\fR\fB\fIN\fR\fR\fB:]\fR\fB\fIdb_list\fR\fR
 .sp
 Create a queue for processing the databases in
@@ -1300,6 +1395,8 @@ mysqlpump Parallel Processing\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: password option
+.\" password option: mysqlpump
 \fB\-\-password[=\fR\fB\fIpassword\fR\fR\fB]\fR,
 \fB\-p[\fR\fB\fIpassword\fR\fR\fB]\fR
 .sp
@@ -1327,6 +1424,8 @@ Section\ \&6.1.2.1, \(lqEnd-User Guidelines for Password Security\(rq\&. You can
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: plugin-dir option
+.\" plugin-dir option: mysqlpump
 \fB\-\-plugin\-dir=\fR\fB\fIdir_name\fR\fR
 .sp
 The directory in which to look for plugins\&. Specify this option if the
@@ -1334,7 +1433,7 @@ The directory in which to look for plugins\&. Specify this option if the
 option is used to specify an authentication plugin but
 \fBmysqlpump\fR
 does not find it\&. See
-Section\ \&6.3.9, \(lqPluggable Authentication\(rq\&.
+Section\ \&6.3.8, \(lqPluggable Authentication\(rq\&.
 .RE
 .sp
 .RS 4
@@ -1345,6 +1444,8 @@ Section\ \&6.3.9, \(lqPluggable Authentication\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: port option
+.\" port option: mysqlpump
 \fB\-\-port=\fR\fB\fIport_num\fR\fR,
 \fB\-P \fR\fB\fIport_num\fR\fR
 .sp
@@ -1359,6 +1460,8 @@ The TCP/IP port number to use for the connection\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: print-defaults option
+.\" print-defaults option: mysqlpump
 \fB\-\-print\-defaults\fR
 .sp
 Print the program name and all options that it gets from option files\&.
@@ -1372,6 +1475,8 @@ Print the program name and all options that it gets from option files\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: protocol option
+.\" protocol option: mysqlpump
 \fB\-\-protocol={TCP|SOCKET|PIPE|MEMORY}\fR
 .sp
 The connection protocol to use for connecting to the server\&. It is useful when the other connection parameters normally would cause a protocol to be used other than the one you want\&. For details on the permissible values, see
@@ -1386,6 +1491,8 @@ Section\ \&4.2.2, \(lqConnecting to the MySQL Server\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: replace option
+.\" replace option: mysqlpump
 \fB\-\-replace\fR
 .sp
 Write
@@ -1403,14 +1510,16 @@ statements\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: result-file option
+.\" result-file option: mysqlpump
 \fB\-\-result\-file=\fR\fB\fIfile_name\fR\fR
 .sp
 Direct output to the named file\&. The result file is created and its previous contents overwritten, even if an error occurs while generating the dump\&.
 .sp
 This option should be used on Windows to prevent newline
-\en
+\(lq\en\(rq
 characters from being converted to
-\er\en
+\(lq\er\en\(rq
 carriage return/newline sequences\&.
 .RE
 .sp
@@ -1422,9 +1531,11 @@ carriage return/newline sequences\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: routines option
+.\" routines option: mysqlpump
 \fB\-\-routines\fR
 .sp
-Include stored routines (procedures and functions) for the dumped databases in the output\&. This option requires the
+Include stored routines (procedures and functions) for the dumped databases in the output\&. Use of this option requires the
 SELECT
 privilege for the
 mysql\&.proc
@@ -1458,6 +1569,8 @@ to disable it\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: secure-auth option
+.\" secure-auth option: mysqlpump
 \fB\-\-secure\-auth\fR
 .sp
 Do not send passwords to the server in old (pre\-4\&.1) format\&. This prevents connections except for servers that use the newer password format\&.
@@ -1474,6 +1587,8 @@ This option is deprecated and will be removed in a future MySQL release\&. It is
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: set-charset option
+.\" set-charset option: mysqlpump
 \fB\-\-set\-charset\fR
 .sp
 Write
@@ -1494,102 +1609,8 @@ statement, use
 .sp -1
 .IP \(bu 2.3
 .\}
-\fB\-\-set\-gtid\-purged=\fR\fB\fIvalue\fR\fR
-.sp
-This option enables control over global transaction ID (GTID) information written to the dump file, by indicating whether to add a
-SET @@global\&.gtid_purged
-statement to the output\&. This option may also cause a statement to be written to the output that disables binary logging while the dump file is being reloaded\&.
-.sp
-The following table shows the permitted option values\&. The default value is
-AUTO\&.
-.TS
-allbox tab(:);
-lB lB.
-T{
-Value
-T}:T{
-Meaning
-T}
-.T&
-l l
-l l
-l l.
-T{
-OFF
-T}:T{
-Add no SET statement to the output\&.
-T}
-T{
-ON
-T}:T{
-Add a SET statement to the output\&. An error occurs if
-                    GTIDs are not enabled on the server\&.
-T}
-T{
-AUTO
-T}:T{
-Add a SET statement to the output if GTIDs are
-                    enabled on the server\&.
-T}
-.TE
-.sp 1
-The
-\fB\-\-set\-gtid\-purged\fR
-option has the following effect on binary logging when the dump file is reloaded:
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-\fB\-\-set\-gtid\-purged=OFF\fR:
-SET @@SESSION\&.SQL_LOG_BIN=0;
-is not added to the output\&.
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-\fB\-\-set\-gtid\-purged=ON\fR:
-SET @@SESSION\&.SQL_LOG_BIN=0;
-is added to the output\&.
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
-\fB\-\-set\-gtid\-purged=AUTO\fR:
-SET @@SESSION\&.SQL_LOG_BIN=0;
-is added to the output if GTIDs are enabled on the server you are backing up (that is, if
-AUTO
-evaluates to
-ON)\&.
-.RE
-.sp
-This option was added in MySQL 5\&.7\&.18\&.
-.RE
-.sp
-.RS 4
-.ie n \{\
-\h'-04'\(bu\h'+03'\c
-.\}
-.el \{\
-.sp -1
-.IP \(bu 2.3
-.\}
+.\" mysqlpump: single-transaction option
+.\" single-transaction option: mysqlpump
 \fB\-\-single\-transaction\fR
 .sp
 This option sets the transaction isolation mode to
@@ -1667,6 +1688,8 @@ shell> \fBmysqlpump \-\-single\-transaction \-\-default\-parallelism=0\fR
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: skip-definer option
+.\" skip-definer option: mysqlpump
 \fB\-\-skip\-definer\fR
 .sp
 Omit
@@ -1680,7 +1703,7 @@ DEFINER
 and
 SQL SECURITY
 values\&. See
-Section\ \&23.6, \(lqAccess Control for Stored Programs and Views\(rq\&.
+Section\ \&19.6, \(lqAccess Control for Stored Programs and Views\(rq\&.
 .RE
 .sp
 .RS 4
@@ -1691,6 +1714,8 @@ Section\ \&23.6, \(lqAccess Control for Stored Programs and Views\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: skip-dump-rows option
+.\" skip-dump-rows option: mysqlpump
 \fB\-\-skip\-dump\-rows\fR,
 \fB\-d\fR
 .sp
@@ -1705,6 +1730,8 @@ Do not dump table rows\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: socket option
+.\" socket option: mysqlpump
 \fB\-\-socket={\fR\fB\fIfile_name\fR\fR\fB|\fR\fB\fIpipe_name\fR\fR\fB}\fR,
 \fB\-S {\fR\fB\fIfile_name\fR\fR\fB|\fR\fB\fIpipe_name\fR\fR\fB}\fR
 .sp
@@ -1720,12 +1747,14 @@ localhost, the Unix socket file to use, or, on Windows, the name of the named pi
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: SSL options
+.\" SSL options: mysqlpump
 \fB\-\-ssl*\fR
 .sp
 Options that begin with
 \fB\-\-ssl\fR
 specify whether to connect to the server using SSL and indicate where to find SSL keys and certificates\&. See
-Section\ \&6.4.2, \(lqCommand Options for Encrypted Connections\(rq\&.
+Section\ \&6.3.12.5, \(lqCommand Options for Secure Connections\(rq\&.
 .RE
 .sp
 .RS 4
@@ -1736,10 +1765,12 @@ Section\ \&6.4.2, \(lqCommand Options for Encrypted Connections\(rq\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: tls-version option
+.\" tls-version option: mysqlpump
 \fB\-\-tls\-version=\fR\fB\fIprotocol_list\fR\fR
 .sp
 The protocols permitted by the client for encrypted connections\&. The value is a comma\-separated list containing one or more protocol names\&. The protocols that can be named for this option depend on the SSL library used to compile MySQL\&. For details, see
-Section\ \&6.4.6, \(lqEncrypted Connection Protocols and Ciphers\(rq\&.
+Section\ \&6.3.12.3, \(lqSecure Connection Protocols and Ciphers\(rq\&.
 .sp
 This option was added in MySQL 5\&.7\&.10\&.
 .RE
@@ -1752,6 +1783,8 @@ This option was added in MySQL 5\&.7\&.10\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: triggers option
+.\" triggers option: mysqlpump
 \fB\-\-triggers\fR
 .sp
 Include triggers for each dumped table in the output\&.
@@ -1769,6 +1802,8 @@ to disable it\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: tz-utc option
+.\" tz-utc option: mysqlpump
 \fB\-\-tz\-utc\fR
 .sp
 This option enables
@@ -1796,6 +1831,8 @@ to disable it\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: user option
+.\" user option: mysqlpump
 \fB\-\-user=\fR\fB\fIuser_name\fR\fR,
 \fB\-u \fR\fB\fIuser_name\fR\fR
 .sp
@@ -1810,6 +1847,8 @@ The MySQL user name to use when connecting to the server\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: users option
+.\" users option: mysqlpump
 \fB\-\-users\fR
 .sp
 Dump user accounts as logical definitions in the form of
@@ -1847,6 +1886,8 @@ shell> \fBmysqlpump \-\-exclude\-databases=% \-\-users\fR
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: version option
+.\" version option: mysqlpump
 \fB\-\-version\fR,
 \fB\-V\fR
 .sp
@@ -1863,6 +1904,8 @@ This option was added in MySQL 5\&.7\&.9\&.
 .sp -1
 .IP \(bu 2.3
 .\}
+.\" mysqlpump: watch-progress option
+.\" watch-progress option: mysqlpump
 \fB\-\-watch\-progress\fR
 .sp
 Periodically display a progress indicator that provides information about the completed and total number of tables, rows, and other objects\&.
@@ -1871,7 +1914,8 @@ This option is enabled by default; use
 \fB\-\-skip\-watch\-progress\fR
 to disable it\&.
 .RE
-mysqlpump Object Selection.PP
+mysqlpump Object Selection.\" mysqlpump: object selection
+.PP
 \fBmysqlpump\fR
 has a set of inclusion and exclusion options that enable filtering of several object types and provide flexible control over which objects to dump:
 .sp
@@ -2121,7 +2165,8 @@ to treat all name arguments as names of databases to dump\&. It is equivalent to
 \fB\-\-include\-databases\fR
 option that names the same databases\&.
 .RE
-mysqlpump Parallel Processing.PP
+mysqlpump Parallel Processing.\" mysqlpump: parallelism
+.PP
 \fBmysqlpump\fR
 can use parallelism to achieve concurrent processing\&. You can select concurrency between databases (to dump multiple databases simultaneously) and within databases (to dump multiple objects from a given database simultaneously)\&.
 .PP
@@ -2287,7 +2332,8 @@ shell> \fBmysqlpump \-\-single\-transaction \-\-default\-parallelism=0\fR
 .\}
 .sp .5v
 .RE
-mysqlpump Restrictions.PP
+mysqlpump Restrictions.\" mysqlpump: restrictions
+.PP
 \fBmysqlpump\fR
 does not dump the
 INFORMATION_SCHEMA,
@@ -2333,7 +2379,7 @@ shell> \fBmysqlpump mysql user db \&.\&.\&.\fR
 .SH "COPYRIGHT"
 .br
 .PP
-Copyright \(co 1997, 2018, Oracle and/or its affiliates. All rights reserved.
+Copyright \(co 1997, 2016, Oracle and/or its affiliates. All rights reserved.
 .PP
 This documentation is free software; you can redistribute it and/or modify it only under the terms of the GNU General Public License as published by the Free Software Foundation; version 2 of the License.
 .PP

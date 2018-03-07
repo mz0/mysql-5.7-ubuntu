@@ -1,4 +1,4 @@
-/* Copyright (c) 2010, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,7 +23,6 @@
 #include "rpl_info_handler.h"              // enum_return_check
 
 #include <vector>
-#include <string>
 
 class Master_info;
 class Multisource_info;
@@ -41,11 +40,13 @@ public:
   static bool create_slave_info_objects(uint mi_option, uint rli_option, int
                                         thread_mask, Multisource_info *pchannel_map);
 
-  static Master_info* create_mi_and_rli_objects(uint mi_option,
-                                                uint rli_option,
-                                                const char* channel,
-                                                bool convert_repo,
-                                                Multisource_info* channel_map);
+  static Master_info*
+  create_slave_per_channel(uint mi_option,uint rli_option,
+                           const char* channel,
+                           bool convert_repo,
+                           Multisource_info* channel_map,
+                           enum_channel_type channel_type=
+                               SLAVE_REPLICATION_CHANNEL);
 
   static Master_info *create_mi(uint rli_option, const char* channel,
                                 bool conver_repo);
@@ -73,8 +74,6 @@ private:
     uint n_fields;
     const char* schema;
     const char* name;
-    uint n_pk_fields;
-    const uint* pk_field_indexes;
   } struct_table_data;
 
   static struct_table_data rli_table_data;
@@ -115,13 +114,10 @@ private:
                                 uint* found_rep_option,
                                 const struct_table_data table_data,
                                 const struct_file_data file_data, const char **msg);
-  static bool load_channel_names_from_repository(std::vector<std::string> & channel_list, uint mi_instances,
-                                                 uint mi_repository, const char *default_channel,
-                                                 bool *default_channel_created_previously);
+  static bool create_channel_list(std::vector<const char*> & channel_list, uint mi_instances,
+                                  uint mi_repository, const char* default_channel);
 
-  static bool load_channel_names_from_table(std::vector<std::string> &channel_list,
-                                            const char *default_channel,
-                                            bool *default_channel_created_previously);
+  static bool create_channel_list_from_mi_table(std::vector<const char*> &channel_list);
 };
 
 #endif

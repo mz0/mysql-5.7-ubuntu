@@ -1,6 +1,6 @@
 /*****************************************************************************
 
-Copyright (c) 1995, 2017, Oracle and/or its affiliates. All Rights Reserved.
+Copyright (c) 1995, 2014, Oracle and/or its affiliates. All Rights Reserved.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -76,31 +76,7 @@ typedef void* (*os_posix_f_t) (void*);
 
 #ifdef HAVE_PSI_INTERFACE
 /* Define for performance schema registration key */
-struct mysql_pfs_key_t {
-public:
-
-        /** Default Constructor */
-        mysql_pfs_key_t() {
-                s_count++;
-        }
-
-        /** Constructor */
-        mysql_pfs_key_t(unsigned int    val) : m_value(val) {}
-
-        /** Retreive the count.
-        @return number of keys defined */
-        static int get_count() {
-                return s_count;
-        }
-
-        /* Key value. */
-        unsigned int            m_value;
-
-private:
-
-        /** To keep count of number of PS keys defined. */
-        static unsigned int     s_count;
-};
+typedef unsigned int    mysql_pfs_key_t;
 #endif /* HAVE_PSI_INTERFACE */
 
 /** Number of threads active. */
@@ -139,21 +115,14 @@ os_thread_create_func(
 	os_thread_id_t*		thread_id);	/*!< out: id of the created
 						thread, or NULL */
 
-/** Waits until the specified thread completes and joins it.
-Its return value is ignored.
-@param[in,out]	thread	thread to join */
-void
-os_thread_join(
-	os_thread_id_t	thread);
-
-/** Exits the current thread.
-@param[in]	detach	if true, the thread will be detached right before
-exiting. If false, another thread is responsible for joining this thread */
+/*****************************************************************//**
+Exits the current thread. */
 void
 os_thread_exit(
-	bool	detach = true)
-	UNIV_COLD MY_ATTRIBUTE((noreturn));
-
+/*===========*/
+	void*	exit_value)	/*!< in: exit value; in Windows this void*
+				is cast as a DWORD */
+	UNIV_COLD __attribute__((noreturn));
 /*****************************************************************//**
 Returns the thread identifier of current thread.
 @return current thread identifier */

@@ -1,4 +1,3 @@
-call mtr.add_suppression("Plugin audit_log reported");
 ##########################################
 # Run audit_log plugin
 ##########################################

@@ -2,7 +2,7 @@
 #define HANDLER_INCLUDED
 
 /*
-   Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or
    modify it under the terms of the GNU General Public License
@@ -70,8 +70,6 @@ typedef my_bool (*qc_engine_callback)(THD *thd, char *table_key,
 #define HA_ADMIN_NEEDS_CHECK    -12
 /** Needs ALTER TABLE t UPGRADE PARTITIONING. */
 #define HA_ADMIN_NEEDS_UPG_PART -13
-/** Needs to dump and re-create to fix pre 5.0 decimal types */
-#define HA_ADMIN_NEEDS_DUMP_UPGRADE -14
 
 /**
    Return values for check_if_supported_inplace_alter().
@@ -918,8 +916,6 @@ struct handlerton
                               lock is to be acquired/was released.
     @param notification_type  Indicates whether this is pre-acquire or
                               post-release notification.
-    @param victimized        'true' if locking failed as we were selected
-                              as a victim in order to avoid possible deadlocks.
 
     @note Notification is done only for objects from TABLESPACE, SCHEMA,
           TABLE, FUNCTION, PROCEDURE, TRIGGER and EVENT namespaces.
@@ -941,8 +937,7 @@ struct handlerton
             True - if it has failed/lock should not be acquired.
   */
   bool (*notify_exclusive_mdl)(THD *thd, const MDL_key *mdl_key,
-                               ha_notification_type notification_type,
-                               bool *victimized);
+                               ha_notification_type notification_type);
 
   /**
     Notify/get permission from storage engine before or after execution of
@@ -2838,7 +2833,6 @@ public:
                      enum_range_scan_direction direction);
   int compare_key(key_range *range);
   int compare_key_icp(const key_range *range) const;
-  int compare_key_in_buffer(const uchar *buf) const;
   virtual int ft_init() { return HA_ERR_WRONG_COMMAND; }
   void ft_end() { ft_handler=NULL; }
   virtual FT_INFO *ft_init_ext(uint flags, uint inx,String *key)
@@ -2862,18 +2856,9 @@ public:
   */
   virtual int rnd_pos_by_record(uchar *record)
     {
-      int error;
       DBUG_ASSERT(table_flags() & HA_PRIMARY_KEY_REQUIRED_FOR_POSITION);
-
-      error = ha_rnd_init(FALSE);
-      if (error != 0)
-            return error;
-
       position(record);
-      error = ha_rnd_pos(record, ref);
-      ha_rnd_end();
-      return error;
-
+      return ha_rnd_pos(record, ref);
     }
   virtual int read_first_row(uchar *buf, uint primary_key);
   virtual ha_rows records_in_range(uint inx, key_range *min_key, key_range *max_key)
@@ -3616,7 +3601,7 @@ private:
       @retval    0  Success.
       @retval != 0  Error code.
   */
-  virtual int write_row(uchar *buf MY_ATTRIBUTE((unused)))
+  virtual int write_row(uchar *buf __attribute__((unused)))
   {
     return HA_ERR_WRONG_COMMAND;
   }
@@ -3629,13 +3614,13 @@ private:
     the columns required for the error message are not read, the error
     message will contain garbage.
   */
-  virtual int update_row(const uchar *old_data MY_ATTRIBUTE((unused)),
-                         uchar *new_data MY_ATTRIBUTE((unused)))
+  virtual int update_row(const uchar *old_data __attribute__((unused)),
+                         uchar *new_data __attribute__((unused)))
   {
     return HA_ERR_WRONG_COMMAND;
   }
 
-  virtual int delete_row(const uchar *buf MY_ATTRIBUTE((unused)))
+  virtual int delete_row(const uchar *buf __attribute__((unused)))
   {
     return HA_ERR_WRONG_COMMAND;
   }
@@ -3668,8 +3653,8 @@ private:
     @return  non-0 in case of failure, 0 in case of success.
     When lock_type is F_UNLCK, the return value is ignored.
   */
-  virtual int external_lock(THD *thd MY_ATTRIBUTE((unused)),
-                            int lock_type MY_ATTRIBUTE((unused)))
+  virtual int external_lock(THD *thd __attribute__((unused)),
+                            int lock_type __attribute__((unused)))
   {
     return 0;
   }
@@ -4136,15 +4121,8 @@ void ha_set_normalized_disabled_se_str(const std::string &disabled_se_str);
 bool ha_is_storage_engine_disabled(handlerton *se_engine);
 
 bool ha_notify_exclusive_mdl(THD *thd, const MDL_key *mdl_key,
-                             ha_notification_type notification_type,
-                             bool *victimized);
+                             ha_notification_type notification_type);
 bool ha_notify_alter_table(THD *thd, const MDL_key *mdl_key,
                            ha_notification_type notification_type);
-
-int commit_owned_gtids(THD *thd, bool all, bool *need_clear_ptr);
-int commit_owned_gtid_by_partial_command(THD *thd);
-bool set_tx_isolation(THD *thd,
-                      enum_tx_isolation tx_isolation,
-                      bool one_shot);
 
 #endif /* HANDLER_INCLUDED */

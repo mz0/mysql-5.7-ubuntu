@@ -576,11 +576,6 @@ select master_pos_wait();
 -- error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
 select master_pos_wait(1);
 
---disable_result_log
---error 0,ER_WRONG_ARGUMENTS
-select master_pos_wait('master-bin.999999', 4, -1);
---enable_result_log
-
 -- error ER_WRONG_PARAMCOUNT_TO_NATIVE_FCT
 select rand(1, 2, 3);
 
@@ -1352,16 +1347,6 @@ ALTER TABLE t1 WITHOUT VALIDATION;
 ALTER TABLE t1 LOCK=SHARED, WITH VALIDATION, ALGORITHM=COPY,
                LOCK=EXCLUSIVE, WITHOUT VALIDATION, ALGORITHM=INPLACE;
 DROP TABLE t1;
-
---echo #
---echo # WL#8662: Deprecate "Delphi style" column and table syntax
---echo #
-
-CREATE TABLE t1 (.i INT);
-CREATE TABLE .t2 (i INT);
-SELECT .t1.i FROM t1;
-
-DROP TABLE t1, t2;
 
 --echo #
 

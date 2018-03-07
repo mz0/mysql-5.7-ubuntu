@@ -1,7 +1,7 @@
 #ifndef SQL_AUDIT_INCLUDED
 #define SQL_AUDIT_INCLUDED
 
-/* Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -67,16 +67,32 @@ void mysql_audit_release(THD *thd);
 
   @param[in] thd              Current thread data.
   @param[in] subclass         Type of general audit event.
-  @param[in] subclass_name    Subclass name.
   @param[in] error_code       Error code
   @param[in] msg              Message
-  @param[in] msg_len          Message length.
+  @param[in] msglen           Message length
 
   @result Value returned is not taken into consideration by the server.
 */
 int mysql_audit_notify(THD *thd, mysql_event_general_subclass_t subclass,
-                       const char* subclass_name,
                        int error_code, const char *msg, size_t msg_len);
+/**
+  Call audit plugins of GENERAL audit class.
+
+  @param[in] thd              Current thread data.
+  @param[in] event_subtype    Type of general audit event.
+  @param[in] error_code       Error code
+  @param[in] msg              Message
+
+  @result Value returned is not taken into consideration by the server.
+*/
+inline static
+int mysql_audit_general(THD *thd, mysql_event_general_subclass_t event_subtype,
+                        int error_code, const char *msg)
+{
+  return mysql_audit_notify(thd, event_subtype, error_code,
+                            msg, msg ? strlen(msg) : 0);
+}
+
 /**
   Call audit plugins of GENERAL LOG audit class.
 
@@ -89,8 +105,7 @@ int mysql_audit_notify(THD *thd, mysql_event_general_subclass_t subclass,
 inline static
 int mysql_audit_general_log(THD *thd, const char *cmd, size_t cmdlen)
 {
-  return mysql_audit_notify(thd, AUDIT_EVENT(MYSQL_AUDIT_GENERAL_LOG),
-                            0, cmd, cmdlen);
+  return mysql_audit_notify(thd, MYSQL_AUDIT_GENERAL_LOG, 0, cmd, cmdlen);
 }
 
 /**
@@ -174,14 +189,12 @@ int mysql_audit_notify(THD *thd, mysql_event_global_variable_subclass_t subclass
   Call audit plugins of SERVER STARTUP audit class.
 
   @param[in] subclass Type of the server startup audit event.
-  @param[in] subclass_name Name of the subclass.
   @param[in] argv     Array of program arguments.
   @parma[in] argc     Program arguments array length.
 
   @result 0 - continue server start, otherwise abort.
 */
 int mysql_audit_notify(mysql_event_server_startup_subclass_t subclass,
-                       const char *subclass_name,
                        const char **argv,
                        unsigned int argc);
 

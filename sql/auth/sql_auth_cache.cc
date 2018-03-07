@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -25,7 +25,6 @@
 #include "sql_time.h"
 #include "sql_plugin.h"                         // lock_plugin_data etc.
 #include "debug_sync.h"
-#include "sql_user_table.h"
 
 #define INVALID_DATE "0000-00-00 00:00:00"
 
@@ -591,7 +590,7 @@ bool hostname_requires_resolving(const char *hostname)
 
 
 static uchar* get_key_column(GRANT_COLUMN *buff, size_t *length,
-                             my_bool not_used MY_ATTRIBUTE((unused)))
+                             my_bool not_used __attribute__((unused)))
 {
   *length=buff->key_length;
   return (uchar*) buff->column;
@@ -599,7 +598,7 @@ static uchar* get_key_column(GRANT_COLUMN *buff, size_t *length,
 
 
 uchar* get_grant_table(GRANT_NAME *buff, size_t *length,
-                       my_bool not_used MY_ATTRIBUTE((unused)))
+                       my_bool not_used __attribute__((unused)))
 {
   *length=buff->key_length;
   return (uchar*) buff->hash_key;
@@ -679,12 +678,8 @@ GRANT_NAME::GRANT_NAME(TABLE *form, bool is_routine)
   key_length= (strlen(db) + strlen(user) + strlen(tname) + 3);
   hash_key=   (char*) alloc_root(&memex, key_length);
   my_stpcpy(my_stpcpy(my_stpcpy(hash_key,user)+1,db)+1,tname);
-
-  if (form->field[MYSQL_TABLES_PRIV_FIELD_TABLE_PRIV])
-  {
-    privs = (ulong) form->field[MYSQL_TABLES_PRIV_FIELD_TABLE_PRIV]->val_int();
-    privs = fix_rights_for_table(privs);
-  }
+  privs = (ulong) form->field[6]->val_int();
+  privs = fix_rights_for_table(privs);
 }
 
 
@@ -698,14 +693,8 @@ GRANT_TABLE::GRANT_TABLE(TABLE *form)
     cols= 0;
     return;
   }
-
-  if (form->field[MYSQL_TABLES_PRIV_FIELD_COLUMN_PRIV])
-  {
-    cols= (ulong) form->field[MYSQL_TABLES_PRIV_FIELD_COLUMN_PRIV]->val_int();
-    cols =  fix_rights_for_column(cols);
-  }
-  else
-    cols= 0;
+  cols= (ulong) form->field[7]->val_int();
+  cols =  fix_rights_for_column(cols);
 
   (void) my_hash_init2(&hash_columns,4,system_charset_info,
                    0,0,0, (my_hash_get_key) get_key_column,0,0,
@@ -959,7 +948,7 @@ acl_find_proxy_user(const char *user, const char *host, const char *ip,
 
 
 static uchar* acl_entry_get_key(acl_entry *entry, size_t *length,
-                                my_bool not_used MY_ATTRIBUTE((unused)))
+                                my_bool not_used __attribute__((unused)))
 {
   *length=(uint) entry->length;
   return (uchar*) entry->key;
@@ -967,7 +956,7 @@ static uchar* acl_entry_get_key(acl_entry *entry, size_t *length,
 
 
 static uchar* check_get_key(ACL_USER *buff, size_t *length,
-                            my_bool not_used MY_ATTRIBUTE((unused)))
+                            my_bool not_used __attribute__((unused)))
 {
   *length=buff->host.get_host_len();
   return (uchar*) buff->host.get_host();
@@ -1461,18 +1450,6 @@ static my_bool acl_load(THD *thd, TABLE_LIST *tables)
   Acl_load_user_table_schema *table_schema = NULL;
   bool is_old_db_layout= false;
   DBUG_ENTER("acl_load");
-
-  DBUG_EXECUTE_IF("wl_9262_set_max_length_hostname",
-                    thd->security_context()->assign_priv_host(
-                      "oh_my_gosh_this_is_a_long_"
-                      "hostname_look_at_it_it_has_60"
-                      "_char", 60);
-                    thd->security_context()->assign_host(
-                      "oh_my_gosh_this_is_a_long_"
-                      "hostname_look_at_it_it_has_60"
-                      "_char", 60);
-                    thd->security_context()->set_host_or_ip_ptr();
-                    );
 
   thd->variables.sql_mode&= ~MODE_PAD_CHAR_TO_FULL_LENGTH;
 
@@ -2687,8 +2664,7 @@ void acl_update_user(const char *user, const char *host,
                               auth.str, auth.length);
             acl_user->auth_string.length= auth.length;
             set_user_salt(acl_user);
-            if (password_change_time.time_type != MYSQL_TIMESTAMP_ERROR)
-              acl_user->password_last_changed= password_change_time;
+            acl_user->password_last_changed= password_change_time;
           }
         }
         acl_user->access=privileges;
@@ -2714,8 +2690,7 @@ void acl_update_user(const char *user, const char *host,
         if (password_life.update_password_expired_column ||
             what_is_set & PLUGIN_ATTR)
           acl_user->password_expired= password_life.update_password_expired_column;
-        if (!password_life.update_password_expired_column &&
-            password_life.update_password_expired_fields)
+        if (!password_life.update_password_expired_column)
         {
           if (!password_life.use_default_password_lifetime)
           {

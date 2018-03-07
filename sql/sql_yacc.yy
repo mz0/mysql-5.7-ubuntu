@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2000, 2017 Oracle and/or its affiliates. All rights reserved.
+   Copyright (c) 2000, 2016 Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -733,7 +733,6 @@ bool my_yyoverflow(short **a, YYSTYPE **b, YYLTYPE **c, ulong *yystacksize);
 %token  ITERATE_SYM
 %token  JOIN_SYM                      /* SQL-2003-R */
 %token  JSON_SEPARATOR_SYM            /* MYSQL */
-%token  JSON_UNQUOTED_SEPARATOR_SYM   /* MYSQL */
 %token  JSON_SYM                      /* MYSQL */
 %token  KEYS
 %token  KEY_BLOCK_SIZE
@@ -2367,11 +2366,6 @@ create:
           ident_or_text OPTIONS_SYM '(' server_options_list ')'
           {
             Lex->sql_command= SQLCOM_CREATE_SERVER;
-            if ($3.length == 0)
-            {
-              my_error(ER_WRONG_VALUE, MYF(0), "server name", "");
-              MYSQL_YYABORT;
-            }
             Lex->server_options.m_server_name= $3;
             Lex->server_options.set_scheme($7);
             Lex->m_sql_cmd=
@@ -5024,11 +5018,9 @@ size_number:
                 case 'g':
                 case 'G':
                   text_shift_number+=10;
-                  // Fall through.
                 case 'm':
                 case 'M':
                   text_shift_number+=10;
-                  // Fall through.
                 case 'k':
                 case 'K':
                   text_shift_number+=10;
@@ -5494,12 +5486,6 @@ part_name:
           {
             partition_info *part_info= Lex->part_info;
             partition_element *p_elem= part_info->curr_part_elem;
-            if (check_string_char_length(to_lex_cstring($1), "", NAME_CHAR_LEN,
-                                         system_charset_info, true))
-            {
-              my_error(ER_TOO_LONG_IDENT, MYF(0), $1.str);
-              MYSQL_YYABORT;
-            }
             p_elem->partition_name= $1.str;
           }
         ;
@@ -5796,15 +5782,7 @@ sub_part_definition:
 
 sub_name:
           ident_or_text
-          {
-            if (check_string_char_length(to_lex_cstring($1), "", NAME_CHAR_LEN,
-                                         system_charset_info, true))
-            {
-              my_error(ER_TOO_LONG_IDENT, MYF(0), $1.str);
-              MYSQL_YYABORT;
-            }
-            Lex->part_info->curr_part_elem->partition_name= $1.str;
-          }
+          { Lex->part_info->curr_part_elem->partition_name= $1.str; }
         ;
 
 opt_part_options:
@@ -9147,7 +9125,6 @@ select_option:
           }
         | SQL_NO_CACHE_SYM
           {
-            push_deprecated_warn_no_replacement(YYTHD, "SQL_NO_CACHE");
             /*
               Allow this flag only on the first top-level SELECT statement, if
               SQL_CACHE wasn't specified, and only once per query.
@@ -9157,7 +9134,6 @@ select_option:
           }
         | SQL_CACHE_SYM
           {
-            push_deprecated_warn_no_replacement(YYTHD, "SQL_CACHE");
             /*
               Allow this flag only on the first top-level SELECT statement, if
               SQL_NO_CACHE wasn't specified, and only once per query.
@@ -9571,14 +9547,6 @@ simple_expr:
               NEW_PTN Item_string(@$, $3.str, $3.length,
                                   YYTHD->variables.collation_connection);
             $$= NEW_PTN Item_func_json_extract(YYTHD, @$, $1, path);
-          }
-         | simple_ident JSON_UNQUOTED_SEPARATOR_SYM TEXT_STRING_literal
-          {
-            Item_string *path=
-              NEW_PTN Item_string(@$, $3.str, $3.length,
-                                  YYTHD->variables.collation_connection);
-            Item *extr= NEW_PTN Item_func_json_extract(YYTHD, @$, $1, path);
-            $$= NEW_PTN Item_func_json_unquote(@$, extr);
           }
         ;
 
@@ -10997,7 +10965,6 @@ opt_procedure_analyse_clause:
         | PROCEDURE_SYM ANALYSE_SYM
           '(' opt_procedure_analyse_params ')'
           {
-            push_deprecated_warn_no_replacement(YYTHD, "PROCEDURE ANALYSE");
             $$= NEW_PTN PT_procedure_analyse($4);
           }
         ;
@@ -12428,10 +12395,7 @@ flush_option:
         | RELAY LOGS_SYM opt_channel
           { Lex->type|= REFRESH_RELAY_LOG; }
         | QUERY_SYM CACHE_SYM
-          {
-            push_deprecated_warn_no_replacement(YYTHD, "FLUSH QUERY CACHE");
-            Lex->type|= REFRESH_QUERY_CACHE_FREE;
-          }
+          { Lex->type|= REFRESH_QUERY_CACHE_FREE; }
         | HOSTS_SYM
           { Lex->type|= REFRESH_HOSTS; }
         | PRIVILEGES
@@ -12472,11 +12436,7 @@ reset_option:
           SLAVE               { Lex->type|= REFRESH_SLAVE; }
           slave_reset_options opt_channel
         | MASTER_SYM          { Lex->type|= REFRESH_MASTER; }
-        | QUERY_SYM CACHE_SYM
-          {
-            push_deprecated_warn_no_replacement(YYTHD, "RESET QUERY CACHE");
-            Lex->type|= REFRESH_QUERY_CACHE;
-          }
+        | QUERY_SYM CACHE_SYM { Lex->type|= REFRESH_QUERY_CACHE;}
         ;
 
 slave_reset_options:
@@ -12967,8 +12927,6 @@ simple_ident_q:
           }
         | '.' ident '.' ident
           {
-            push_deprecated_warn(YYTHD, ".<table>.<column>",
-                                 "the table.column name without a dot prefix");
             $$= NEW_PTN PTI_simple_ident_q_3d(@$, NULL, $2.str, $4.str);
           }
         | ident '.' ident '.' ident
@@ -13005,11 +12963,7 @@ field_ident:
             }
             $$=$3;
           }
-        | '.' ident /* For Delphi */
-          {
-            push_deprecated_warn(YYTHD, ".<column>", "the column name without a dot prefix");
-            $$=$2;
-          }
+        | '.' ident { $$=$2;} /* For Delphi */
         ;
 
 table_ident:
@@ -13032,7 +12986,6 @@ table_ident:
         | '.' ident
           {
             /* For Delphi */
-            push_deprecated_warn(YYTHD, ".<table>", "the table name without a dot prefix");
             $$= NEW_PTN Table_ident(to_lex_cstring($2));
             if ($$ == NULL)
               MYSQL_YYABORT;

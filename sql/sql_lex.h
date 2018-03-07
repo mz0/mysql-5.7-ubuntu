@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -306,8 +306,8 @@ typedef struct st_lex_master_info
     changed variable or if it should be left at old value
    */
   enum {LEX_MI_UNCHANGED= 0, LEX_MI_DISABLE, LEX_MI_ENABLE}
-    ssl, ssl_verify_server_cert, heartbeat_opt, repl_ignore_server_ids_opt,
-    retry_count_opt, auto_position, port_opt;
+    ssl, ssl_verify_server_cert, heartbeat_opt, repl_ignore_server_ids_opt, 
+    retry_count_opt, auto_position;
   char *ssl_key, *ssl_cert, *ssl_ca, *ssl_capath, *ssl_cipher;
   char *ssl_crl, *ssl_crlpath, *tls_version;
   char *relay_log_name;
@@ -2098,11 +2098,6 @@ public:
     */
     BINLOG_STMT_UNSAFE_FULLTEXT_PLUGIN,
 
-    /**
-      XA transactions and statements.
-    */
-    BINLOG_STMT_UNSAFE_XA,
-
     /* The last element of this enumeration type. */
     BINLOG_STMT_UNSAFE_COUNT
   };
@@ -3002,7 +2997,7 @@ public:
     m_current_select= select;
   }
   /// @return true if this is an EXPLAIN statement
-  bool is_explain() const { return (describe & DESCRIBE_NORMAL); }
+  bool is_explain() const { return describe; }
   char *length,*dec,*change;
   LEX_STRING name;
   char *help_arg;
@@ -3127,7 +3122,7 @@ private:
     With Visual Studio, an std::map will always allocate two small objects
     on the heap. Sometimes we put LEX objects in a MEM_ROOT, and never run
     the LEX DTOR. To avoid memory leaks, put this std::map on the heap,
-    and call clear_values_map() at the end of each statement
+    and call clear_values_map() in lex_end()
    */
   std::map<Field *,Field *> *insert_update_values_map;
 public:

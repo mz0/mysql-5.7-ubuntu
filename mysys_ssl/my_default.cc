@@ -1,4 +1,4 @@
-/* Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -110,7 +110,15 @@ static const char *my_login_path= 0;
 static char my_defaults_file_buffer[FN_REFLEN];
 static char my_defaults_extra_file_buffer[FN_REFLEN];
 
+static char my_login_file[FN_REFLEN];
+
 static my_bool defaults_already_read= FALSE;
+
+/* Set to TRUE, if --no-defaults is found. */
+static my_bool found_no_defaults= FALSE;
+
+/* Set to TRUE, when login file is being processed. */
+static my_bool is_login_file= FALSE;
 
 /* Which directories are searched for options (and in which order) */
 
@@ -147,16 +155,13 @@ struct handle_option_ctx
 };
 
 static int search_default_file(Process_option_func func, void *func_ctx,
-                               const char *dir, const char *config_file,
-                               my_bool is_login_file);
+			       const char *dir, const char *config_file);
 static int search_default_file_with_ext(Process_option_func func,
                                         void *func_ctx,
 					const char *dir, const char *ext,
-                                        const char *config_file,
-                                        int recursion_level,
-                                        my_bool is_login_file);
-static my_bool mysql_file_getline(char *str, int size, MYSQL_FILE *file,
-                                  my_bool is_login_file);
+					const char *config_file, int recursion_level);
+static my_bool mysql_file_getline(char *str, int size, MYSQL_FILE *file);
+
 
 /**
   Create the list of default directories.
@@ -232,7 +237,6 @@ fn_expand(const char *filename, char *result_buf)
   func_ctx                    It's context. Usually it is the structure to
                               store additional options.
   default_directories         List of default directories.
-  found_no_defaults           TRUE, if --no-defaults is specified.
 
   DESCRIPTION
     Process the default options from argc & argv
@@ -256,8 +260,7 @@ fn_expand(const char *filename, char *result_buf)
 
 int my_search_option_files(const char *conf_file, int *argc, char ***argv,
                            uint *args_used, Process_option_func func,
-                           void *func_ctx, const char **default_directories,
-                           my_bool is_login_file, my_bool found_no_defaults)
+                           void *func_ctx, const char **default_directories)
 {
   const char **dirs, *forced_default_file, *forced_extra_defaults;
   int error= 0;
@@ -271,10 +274,10 @@ int my_search_option_files(const char *conf_file, int *argc, char ***argv,
                                       (char **) &forced_default_file,
                                       (char **) &forced_extra_defaults,
                                       (char **) &my_defaults_group_suffix,
-                                      (char **) &my_login_path, found_no_defaults);
+                                      (char **) &my_login_path);
 
     if (! my_defaults_group_suffix)
-      my_defaults_group_suffix= getenv("MYSQL_GROUP_SUFFIX");
+      my_defaults_group_suffix= getenv(STRINGIFY_ARG(DEFAULT_GROUP_SUFFIX_ENV));
 
     if (forced_extra_defaults && !defaults_already_read)
     {
@@ -386,16 +389,14 @@ int my_search_option_files(const char *conf_file, int *argc, char ***argv,
   // If conf_file is an absolute path, we only read it
   if (dirname_length(conf_file))
   {
-    if ((error= search_default_file(func, func_ctx, NullS, conf_file,
-                                    is_login_file)) < 0)
-    goto err;
+    if ((error= search_default_file(func, func_ctx, NullS, conf_file)) < 0)
+      goto err;
   }
   // If my defaults file is set (from a previous run), we read it
   else if (my_defaults_file)
   {
     if ((error= search_default_file_with_ext(func, func_ctx, "", "",
-                                             my_defaults_file, 0,
-                                             is_login_file)) < 0)
+                                             my_defaults_file, 0)) < 0)
       goto err;
     if (error > 0)
     {
@@ -411,16 +412,14 @@ int my_search_option_files(const char *conf_file, int *argc, char ***argv,
     {
       if (**dirs)
       {
-       if (search_default_file(func, func_ctx, *dirs, conf_file,
-                               is_login_file) < 0)
-        goto err;
+	if (search_default_file(func, func_ctx, *dirs, conf_file) < 0)
+	  goto err;
       }
       else if (my_defaults_extra_file)
       {
         if ((error= search_default_file_with_ext(func, func_ctx, "", "",
-                                                 my_defaults_extra_file, 0,
-                                                 is_login_file)) < 0)
-          goto err;				/* Fatal error */
+                                                my_defaults_extra_file, 0)) < 0)
+	  goto err;				/* Fatal error */
         if (error > 0)
         {
           my_message_local(ERROR_LEVEL,
@@ -510,8 +509,7 @@ int get_defaults_options(int argc, char **argv,
                          char **defaults,
                          char **extra_defaults,
                          char **group_suffix,
-                         char **login_path,
-                         my_bool found_no_defaults)
+                         char **login_path)
 {
   int org_argc= argc, prev_argc= 0, default_option_count= 0;
   *defaults= *extra_defaults= *group_suffix= *login_path= 0;
@@ -588,8 +586,6 @@ int load_defaults(const char *conf_file, const char **groups,
   return my_load_defaults(conf_file, groups, argc, argv, &default_directories);
 }
 
-/** A global to turn off or on reading the mylogin file. On by default */
-my_bool my_defaults_read_login_file= TRUE;
 /*
   Read options from configurations files
 
@@ -640,8 +636,6 @@ int my_load_defaults(const char *conf_file, const char **groups,
   char *ptr,**res;
   struct handle_option_ctx ctx;
   const char **dirs;
-  char my_login_file[FN_REFLEN];
-  my_bool found_no_defaults= false;
   uint args_sep= my_getopt_use_args_separator ? 1 : 0;
   DBUG_ENTER("load_defaults");
 
@@ -668,24 +662,24 @@ int my_load_defaults(const char *conf_file, const char **groups,
 
   if ((error= my_search_option_files(conf_file, argc, argv,
                                      &args_used, handle_default_option,
-                                     (void *) &ctx, dirs, false, found_no_defaults)))
+                                     (void *) &ctx, dirs)))
   {
     free_root(&alloc,MYF(0));
     DBUG_RETURN(error);
   }
 
-  if (my_defaults_read_login_file)
-  {
-    /* Read options from login group. */
-    if (my_default_get_login_file(my_login_file, sizeof(my_login_file)) &&
-      (error= my_search_option_files(my_login_file, argc, argv, &args_used,
+  /* Read options from login group. */
+  is_login_file= TRUE;
+  if (my_default_get_login_file(my_login_file, sizeof(my_login_file)) &&
+      (error= my_search_option_files(my_login_file,argc, argv, &args_used,
                                      handle_default_option, (void *) &ctx,
-                                     dirs, true, found_no_defaults)))
-    {
-      free_root(&alloc, MYF(0));
-      DBUG_RETURN(error);
-    }
+                                     dirs)))
+  {
+    free_root(&alloc,MYF(0));
+    DBUG_RETURN(error);
   }
+  is_login_file= FALSE;
+
   /*
     Here error contains <> 0 only if we have a fully specified conf_file
     or a forced default file
@@ -775,8 +769,7 @@ void free_defaults(char **argv)
 static int search_default_file(Process_option_func opt_handler,
                                void *handler_ctx,
 			       const char *dir,
-                               const char *config_file,
-                               my_bool is_login_file)
+			       const char *config_file)
 {
   char **ext;
   const char *empty_list[]= { "", 0 };
@@ -788,7 +781,7 @@ static int search_default_file(Process_option_func opt_handler,
     int error;
     if ((error= search_default_file_with_ext(opt_handler, handler_ctx,
                                              dir, *ext,
-                                             config_file, 0, is_login_file)) < 0)
+					     config_file, 0)) < 0)
       return error;
   }
   return 0;
@@ -860,7 +853,6 @@ static char *get_argument(const char *keyword, size_t kwlen,
     group			groups to read
     recursion_level             the level of recursion, got while processing
                                 "!include" or "!includedir"
-    is_login_file               TRUE, when login file is being processed.
 
   RETURN
     0   Success
@@ -873,8 +865,7 @@ static int search_default_file_with_ext(Process_option_func opt_handler,
                                         const char *dir,
                                         const char *ext,
                                         const char *config_file,
-                                        int recursion_level,
-                                        my_bool is_login_file)
+                                        int recursion_level)
 {
   char name[FN_REFLEN + 10], buff[4096], curr_gr[4096], *ptr, *end, **tmp_ext;
   char *value, option[4096+2], tmp[FN_REFLEN];
@@ -903,7 +894,7 @@ static int search_default_file_with_ext(Process_option_func opt_handler,
   }
   fn_format(name,name,"","",4);
 
-  if ((rc= check_file_permissions(name, is_login_file)) < 2)
+  if ((rc= check_file_permissions(name)) < 2)
     return (int) rc;
 
   if (is_login_file)
@@ -918,7 +909,7 @@ static int search_default_file_with_ext(Process_option_func opt_handler,
       return 1;                                 /* Ignore wrong files */
   }
 
-  while (mysql_file_getline(buff, sizeof(buff) - 1, fp, is_login_file))
+  while (mysql_file_getline(buff, sizeof(buff) - 1, fp))
   {
     line++;
     /* Ignore comment and empty lines */
@@ -979,7 +970,7 @@ static int search_default_file_with_ext(Process_option_func opt_handler,
                       MY_UNPACK_FILENAME | MY_SAFE_PATH);
 
             search_default_file_with_ext(opt_handler, handler_ctx, "", "", tmp,
-                                         recursion_level + 1, is_login_file);
+                                         recursion_level + 1);
           }
         }
 
@@ -994,7 +985,7 @@ static int search_default_file_with_ext(Process_option_func opt_handler,
 	  goto err;
 
         search_default_file_with_ext(opt_handler, handler_ctx, "", "", ptr,
-                                     recursion_level + 1, is_login_file);
+                                     recursion_level + 1);
       }
 
       continue;
@@ -1156,17 +1147,15 @@ static char *remove_end_comment(char *ptr)
   of scrambled login file, the line read is first
   decrypted and then returned.
 
-  @param str           [out]  Buffer to store the read text.
-  @param size          [in]   At max, size-1 bytes to be read.
-  @param file          [in]   Source file.
-  @param is_login_file [in]   TRUE, when login file is being processed.
+  @param str  [out]       Buffer to store the read text.
+  @param size [in]        At max, size-1 bytes to be read.
+  @param file [in]        Source file.
 
   @return 1               Success
           0               Error
 */
 
-static my_bool mysql_file_getline(char *str, int size, MYSQL_FILE *file,
-                                  my_bool is_login_file)
+static my_bool mysql_file_getline(char *str, int size, MYSQL_FILE *file)
 {
   uchar cipher[4096], len_buf[MAX_CIPHER_STORE_LEN];
   static unsigned char my_key[LOGIN_KEY_LEN];
@@ -1305,7 +1294,7 @@ static int add_directory(MEM_ROOT *alloc, const char *dir, const char **dirs)
   char buf[FN_REFLEN];
   size_t len;
   char *p;
-  my_bool err MY_ATTRIBUTE((unused));
+  my_bool err __attribute__((unused));
 
   len= normalize_dirname(buf, dir);
   if (!(p= strmake_root(alloc, buf, len)))
@@ -1479,14 +1468,13 @@ int my_default_get_login_file(char *file_name, size_t file_name_size)
 /**
   Check file permissions of the option file.
 
-  @param file_name     [in]   Name of the option file.
-  @param is_login_file [in]   TRUE, when login file is being processed.
+  @param file_name [in]       Name of the option file.
 
   @return  0 - Non-allowable file permissions.
            1 - Failed to stat.
            2 - Success.
 */
-int check_file_permissions(const char *file_name, my_bool is_login_file)
+int check_file_permissions(const char *file_name)
 {
 #if !defined(_WIN32)
   MY_STAT stat_info;

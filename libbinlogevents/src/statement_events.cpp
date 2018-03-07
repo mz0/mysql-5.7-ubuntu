@@ -1,4 +1,4 @@
-/* Copyright (c) 2014, 2017, Oracle and/or its affiliates. All rights reserved.
+/* Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -61,8 +61,7 @@ Query_event::Query_event(const char* query_arg, const char* catalog_arg,
   time_zone_len(0), lc_time_names_number(number),
   charset_database_number(0),
   table_map_for_update(table_map_for_update_arg),
-  master_data_written(0), explicit_defaults_ts(TERNARY_UNSET),
-  mts_accessed_dbs(0)
+  master_data_written(0), mts_accessed_dbs(0)
 {
 }
 
@@ -532,8 +531,8 @@ User_var_event(const char* buf, unsigned int event_len,
                          (description_event->footer()->checksum_alg ==
                           BINLOG_CHECKSUM_ALG_OFF));
   size_t data_written= (header()->data_written- checksum_verify);
-  BAPI_ASSERT(((bytes_read == data_written) ? false : true) ||
-              ((bytes_read == data_written - 1) ? false : true));
+  BAPI_ASSERT(((bytes_read == data_written) ? 0 : BINLOG_CHECKSUM_LEN)||
+              ((bytes_read == data_written - 1) ? 0 : BINLOG_CHECKSUM_LEN));
 #endif
     if ((header()->data_written - bytes_read) > 0)
     {

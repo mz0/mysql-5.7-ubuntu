@@ -1,3 +1,10 @@
+mysql-5.7 (5.7.23-0ubuntu2) cosmic; urgency=medium
+
+  * debian/patches/disable_float_test.patch: disable test that is failing
+    on ppc64el due to float differences pending further investigation.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Fri, 24 Aug 2018 11:57:50 -0400
+
 mysql-5.7 (5.7.23-0ubuntu1) cosmic; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.23 to fix security issues

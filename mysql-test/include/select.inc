@@ -2344,12 +2344,16 @@ where key1 <= 0.6158 and key2 >= 1.3762;
 explain select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
 explain select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
 
+--replace_numeric_round 4
 select max(key1) from t1 where key1 <= 0.6158;
+--replace_numeric_round 4
 select max(key2) from t2 where key2 <= 1.6158;
 select min(key1) from t1 where key1 >= 0.3762;
 select min(key2) from t2 where key2 >= 1.3762;
+--replace_numeric_round 4
 select max(key1), min(key2) from t1, t2
 where key1 <= 0.6158 and key2 >= 1.3762;
+--replace_numeric_round 4
 select max(key1) from t1 where key1 <= 0.6158 and rand() + 0.5 >= 0.5;
 select min(key1) from t1 where key1 >= 0.3762 and rand() + 0.5 >= 0.5;
 

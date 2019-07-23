@@ -1,3 +1,10 @@
+mysql-5.7 (5.7.27-0ubuntu2) eoan; urgency=medium
+
+  * debian/patches/fix-func-math-test.patch: remove test that now passes on
+    i386 and causes a FTBFS.
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Tue, 23 Jul 2019 10:46:04 -0400
+
 mysql-5.7 (5.7.27-0ubuntu1) eoan; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.27 to fix security issues

@@ -68,6 +68,7 @@ Package: libmysqlclient-dev
 Architecture: any
 Section: libdevel
 Depends: libmysqlclient20 (= ${binary:Version}),
+         libssl-dev,
          zlib1g-dev,
          ${misc:Depends},
          ${shlibs:Depends}

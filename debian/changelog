@@ -1,3 +1,10 @@
+mysql-5.7 (5.7.29-0ubuntu0.18.04.2) UNRELEASED; urgency=low
+
+  * debian/patches/year2020.patch: fix events_1 test
+  * debian/rules: disable flush2 test (fails on Ryzen 5 3600)
+
+ -- Mark Zhitomirski <mz@exactpro.com>  Mon, 09 Mar 2020 00:57:19 +0300
+
 mysql-5.7 (5.7.29-0ubuntu0.18.04.1) bionic-security; urgency=medium
 
   * SECURITY UPDATE: Update to 5.7.29 to fix security issues

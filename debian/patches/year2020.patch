@@ -2,8 +2,10 @@ Description: Bump tests that assume 2020 is in the future, to use 2037 as the fu
 Author: Dimitri John Ledkov <xnox@ubuntu.com>
 
 
---- a/mysql-test/r/events_bugs.result
-+++ b/mysql-test/r/events_bugs.result
+Index: mysql-5.7-5.7.29/mysql-test/r/events_bugs.result
+===================================================================
+--- mysql-5.7-5.7.29.orig/mysql-test/r/events_bugs.result
++++ mysql-5.7-5.7.29/mysql-test/r/events_bugs.result
 @@ -40,11 +40,11 @@ Warnings:
  Note	1588	Event execution time is in the past and ON COMPLETION NOT PRESERVE is set. The event was dropped immediately after creation.
  show events;
@@ -37,8 +39,10 @@ Author: Dimitri John Ledkov <xnox@ubuntu.com>
  
  ALTER EVENT e1 COMMENT 'comment';
  
---- a/mysql-test/t/events_bugs.test
-+++ b/mysql-test/t/events_bugs.test
+Index: mysql-5.7-5.7.29/mysql-test/t/events_bugs.test
+===================================================================
+--- mysql-5.7-5.7.29.orig/mysql-test/t/events_bugs.test
++++ mysql-5.7-5.7.29/mysql-test/t/events_bugs.test
 @@ -223,11 +223,11 @@ create event e_55 on schedule at 2000010
  show events;
  
@@ -72,3 +76,47 @@ Author: Dimitri John Ledkov <xnox@ubuntu.com>
  
  --echo
  
+Index: mysql-5.7-5.7.29/mysql-test/t/events_1.test
+===================================================================
+--- mysql-5.7-5.7.29.orig/mysql-test/t/events_1.test
++++ mysql-5.7-5.7.29/mysql-test/t/events_1.test
+@@ -68,7 +68,7 @@ drop event event2;
+ CREATE EVENT event_starts_test ON SCHEDULE EVERY 10 SECOND COMMENT "" DO SELECT 1;
+ SELECT interval_field, interval_value, body FROM mysql.event WHERE db='events_test' AND name='event_starts_test';
+ SELECT execute_at IS NULL, starts IS NULL, ends IS NULL, comment FROM mysql.event WHERE db='events_test' AND name='event_starts_test';
+-ALTER EVENT event_starts_test ON SCHEDULE AT '2020-02-02 20:00:02';
++ALTER EVENT event_starts_test ON SCHEDULE AT '2035-02-02 20:00:02';
+ SELECT execute_at IS NULL, starts IS NULL, ends IS NULL, comment FROM mysql.event WHERE db='events_test' AND name='event_starts_test';
+ ALTER EVENT event_starts_test COMMENT "non-empty comment";
+ SELECT execute_at IS NULL, starts IS NULL, ends IS NULL, comment FROM mysql.event WHERE db='events_test' AND name='event_starts_test';
+@@ -76,7 +76,7 @@ ALTER EVENT event_starts_test COMMENT ""
+ SELECT execute_at IS NULL, starts IS NULL, ends IS NULL, comment FROM mysql.event WHERE db='events_test' AND name='event_starts_test';
+ DROP EVENT event_starts_test;
+ 
+-CREATE EVENT event_starts_test ON SCHEDULE EVERY 20 SECOND STARTS '2020-02-02 20:00:02' ENDS '2022-02-02 20:00:02' DO SELECT 2;
++CREATE EVENT event_starts_test ON SCHEDULE EVERY 20 SECOND STARTS '2035-02-02 20:00:02' ENDS '2037-02-02 20:00:02' DO SELECT 2;
+ SELECT execute_at IS NULL, starts IS NULL, ends IS NULL, comment FROM mysql.event WHERE db='events_test' AND name='event_starts_test';
+ ALTER EVENT event_starts_test COMMENT "non-empty comment";
+ SELECT execute_at IS NULL, starts IS NULL, ends IS NULL, comment FROM mysql.event WHERE db='events_test' AND name='event_starts_test';
+Index: mysql-5.7-5.7.29/mysql-test/r/events_1.result
+===================================================================
+--- mysql-5.7-5.7.29.orig/mysql-test/r/events_1.result
++++ mysql-5.7-5.7.29/mysql-test/r/events_1.result
+@@ -49,7 +49,7 @@ SECOND	10	SELECT 1
+ SELECT execute_at IS NULL, starts IS NULL, ends IS NULL, comment FROM mysql.event WHERE db='events_test' AND name='event_starts_test';
+ execute_at IS NULL	starts IS NULL	ends IS NULL	comment
+ 1	0	1	
+-ALTER EVENT event_starts_test ON SCHEDULE AT '2020-02-02 20:00:02';
++ALTER EVENT event_starts_test ON SCHEDULE AT '2035-02-02 20:00:02';
+ SELECT execute_at IS NULL, starts IS NULL, ends IS NULL, comment FROM mysql.event WHERE db='events_test' AND name='event_starts_test';
+ execute_at IS NULL	starts IS NULL	ends IS NULL	comment
+ 0	1	1	
+@@ -62,7 +62,7 @@ SELECT execute_at IS NULL, starts IS NUL
+ execute_at IS NULL	starts IS NULL	ends IS NULL	comment
+ 0	1	1	
+ DROP EVENT event_starts_test;
+-CREATE EVENT event_starts_test ON SCHEDULE EVERY 20 SECOND STARTS '2020-02-02 20:00:02' ENDS '2022-02-02 20:00:02' DO SELECT 2;
++CREATE EVENT event_starts_test ON SCHEDULE EVERY 20 SECOND STARTS '2035-02-02 20:00:02' ENDS '2037-02-02 20:00:02' DO SELECT 2;
+ SELECT execute_at IS NULL, starts IS NULL, ends IS NULL, comment FROM mysql.event WHERE db='events_test' AND name='event_starts_test';
+ execute_at IS NULL	starts IS NULL	ends IS NULL	comment
+ 1	0	0	

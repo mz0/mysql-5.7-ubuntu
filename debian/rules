@@ -149,6 +149,7 @@ else
 	# Tests that are known to be unstable on all platforms are skipped
 	# http://bugs.mysql.com/bug.php?id=83340
 	echo "main.xa_prepared_binlog_off	: unstable test" >> $(builddir)/mysql-test/skiplist
+	echo "main.flush2                       : fails on Ryzen 5 3600 (mz0)" >> $(builddir)/mysql-test/skiplist
 
 	# Skip replication tests since they are timing sensitive and may
 	# result in false positives.

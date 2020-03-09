@@ -19,9 +19,9 @@ Build-Depends: bison,
                libevent-dev,
                libjson-perl,
                liblz4-dev (>= 0.0~r131),
-               libmecab-dev,
                libncurses5-dev (>= 5.0-6),
                libnuma-dev [amd64 arm64 i386 mips mips64el mipsel powerpc ppc64el],
+               libssl-dev (>= 1.1.1-1ubuntu2.1~18.04.5~),
                libwrap0-dev (>= 7.6-8.3),
                lsb-release,
                perl,
@@ -68,6 +68,7 @@ Package: libmysqlclient-dev
 Architecture: any
 Section: libdevel
 Depends: libmysqlclient20 (= ${binary:Version}),
+         libssl-dev (>= 1.1.1-1ubuntu2.1~18.04.5~),
          zlib1g-dev,
          ${misc:Depends},
          ${shlibs:Depends}

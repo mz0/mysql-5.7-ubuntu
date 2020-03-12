@@ -1,0 +1,19 @@
+* i386
+[ 28%] main.func_math                           w2 [ retry-fail ]
+mysqltest: At line 331: query 'SELECT -9223372036854775808 DIV -1' succeeded - should have failed with errno 1690...
+
+* failing flush2 test on a fast machine (focal only?)
+
+* source
+Now running lintian mysql-5.7_5.7.29-0ubuntu0.19.10.1_source.changes ...
+E: mysql-5.7 source: license-problem-json-evil LICENSE
+W: mysql-5.7 source: source-contains-prebuilt-windows-binary mysql-test/std_data/bug21542698.dat
+Argument "0ubuntu0" isn't numeric in addition (+) at /usr/share/lintian/checks/debian/changelog.pm line 160.
+Argument "0ubuntu0" isn't numeric in numeric eq (==) at /usr/share/lintian/checks/debian/changelog.pm line 160.
+W: mysql-5.7 source: orig-tarball-missing-upstream-signature mysql-5.7_5.7.29.orig.tar.gz
+W: mysql-5.7 source: missing-field-in-dep5-copyright copyright (empty field, paragraph at line 689)
+W: mysql-5.7 source: ancient-standards-version 3.9.8 (released 2016-04-06) (current is 4.4.0)
+W: mysql-5.7 source: patch-file-present-but-not-mentioned-in-series fix-func-math-test.patch !!!
+W: mysql-5.7 source: patch-file-present-but-not-mentioned-in-series fix_tests_ppc64el.patch
+Finished running lintian.
+

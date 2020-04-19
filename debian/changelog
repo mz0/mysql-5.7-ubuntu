@@ -1,3 +1,10 @@
+mysql-5.7 (5.7.29-u20.04.0) focal; urgency=medium
+
+  * Non-maintainer upload.
+  * rebuild for focal
+
+ -- Mark Zhitomirski <mz@exactpro.com>  Sun, 19 Apr 2020 09:45:16 -0400
+
 mysql-5.7 (5.7.29-0ubuntu0.19.10.1) eoan; urgency=medium
 
   * Non-maintainer upload.

@@ -48,4 +48,4 @@ See also
 
 [Tutorial](https://wiki.debian.org/BuildingTutorial) on `dpatch-edit-patch`, `debian/patches/00list`, `dch -n`, `debuild -tc` option (clean build artifacts);
 
-P.S. cleanup: `git clean -d -f -x`
+P.S. cleanup: `git clean -Xid -f`

@@ -1,0 +1,19 @@
+Description: disable flaky tests
+ There's no end to mysql test entertainment.
+ .
+ mysql-5.7 (5.7.31-u20) focal; urgency=medium
+ .
+Author: Mark Zhitomirski <mz@exactpro.com>
+
+---
+Last-Update: 2020-10-17
+
+--- mysql-5.7-5.7.31.orig/mysql-test/t/disabled.def
++++ mysql-5.7-5.7.31/mysql-test/t/disabled.def
+@@ -23,3 +23,6 @@ main.ssl_crl_crlpath		: BUG#00000 -  exp
+ main.ssl_ca			: BUG#00000 -  expired cert
+ main.ssl_crl			: BUG#00000 -  expired cert
+ main.ssl_crl_clients_valid	: BUG#00000 -  expired cert
++main.myisam_explain_json_non_select_all  : n/a mz 2020-10-17 Launchpad fail /nb13e pass
++main.myisam_explain_json_non_select_none : n/a mz 2020-10-17 Launchpad fail /nb13e pass
++main.main.mysqlpump_bugs 		 : n/a mz 2020-10-17 Launchpad pass /nb13e fail

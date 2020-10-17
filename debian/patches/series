@@ -1,6 +1,5 @@
-fix_hurd_kfreebsd.patch
 mysql-test-run-paths
 fix_grant_user_lock_as_root.patch
 disable_tests.patch
 disable_crl_tests.patch
-flush2.test-comment
+disable_tests2

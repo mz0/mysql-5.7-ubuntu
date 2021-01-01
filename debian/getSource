@@ -1,0 +1,16 @@
+#!/bin/sh
+
+ORIGIN='http://ftp.gwdg.de/pub/misc/mysql/Downloads/MySQL-5.7'
+#MMM=https://mirror.yandex.ru/mirrors/ftp.mysql.com/Downloads/MySQL-5.7/
+TARGZ="mysql-boost-5.7.${1}.tar.gz"
+CHECK=${TARGZ}.asc
+# TODO absolute directory from script dir
+TGTDIR=../
+
+# TODO check $1 presence
+DST_TARGZ=$TGTDIR/mysql-5.7_5.7.${1}.orig.tar.gz
+DST_CHECK=$TGTDIR/mysql-5.7_5.7.${1}.orig.tar.gz.asc
+
+curl -o $DST_TARGZ -Rs $ORIGIN/$TARGZ && echo "$TARGZ downloaded"
+curl -o $DST_CHECK -Rs $ORIGIN/$CHECK && echo "$CHECK downloaded"
+

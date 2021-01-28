@@ -85,3 +85,26 @@ P.P.S. last update
 31  cd ..
 32  dput ppa:marcuzero/compat mysql-5.7_5.7.32-1_source.changes
 ```
+
+update 33 2021.02.12
+cd ~/m1/mysql-5.7
+git fetch origin
+# remote: Enumerating objects: 1352, done.
+# remote: Counting objects: 100% (612/612), done.
+# remote: Compressing objects: 100% (51/51), done.
+# remote: Total 351 (delta 300), reused 350 (delta 299)
+# Receiving objects: 100% (351/351), 155.00 KiB | 1.72 MiB/s, done.
+# Resolving deltas: 100% (300/300), completed with 201 local objects.
+# From git://git.launchpad.net/ubuntu/+source/mysql-5.7
+#    e3975b2ff..16bb43b70  ubuntu/bionic-devel             -> origin/ubuntu/bionic-devel
+#    e3975b2ff..16bb43b70  ubuntu/bionic-security          -> origin/ubuntu/bionic-security
+#    e3975b2ff..16bb43b70  ubuntu/bionic-updates           -> origin/ubuntu/bionic-updates
+#    4e9ecd433..ddf94c463  applied/ubuntu/bionic-devel     -> origin/applied/ubuntu/bionic-devel
+#    4e9ecd433..ddf94c463  applied/ubuntu/bionic-security  -> origin/applied/ubuntu/bionic-security
+#    4e9ecd433..ddf94c463  applied/ubuntu/bionic-updates   -> origin/applied/ubuntu/bionic-updates
+#    ...
+#
+./debian/getSource 33
+revision=$(git rev-parse --short origin/ubuntu/bionic-security)
+git cherry-pick $revision
+vi debian/changelog # fix it

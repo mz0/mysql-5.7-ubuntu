@@ -6,9 +6,9 @@ sudo apt install devscripts
 sudo apt install \
 bison chrpath cmake debhelper dh-apparmor libaio-dev libedit-dev libevent-dev \
 liblz4-dev libncurses5-dev libnuma-dev libssl-dev libwrap0-dev po-debconf \
-zlib1g-dev
+zlib1g-dev dh-systemd
 
-cd ~/m1/mysql-5.7
+cd ~/m57/mysql-5.7
 dpkg-source --commit
 debuild -S
 dput ppa:marcuzero/compat ../mysql-5.7_5.7.29-u20.04.0_source.changes
